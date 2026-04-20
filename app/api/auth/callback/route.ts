@@ -1,3 +1,4 @@
+// app/api/auth/callback/route.ts
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -64,18 +65,11 @@ export async function GET(request: NextRequest) {
     createdAt: now,
   });
 
-  // Set session cookie + clear state cookie
-  const dashboardUrl = new URL("/dashboard", env.appUrl);
-  const response = NextResponse.redirect(dashboardUrl);
+  // Redirect to same-site session-init to set cookie (avoids cross-site redirect cookie drop)
+  const sessionInitUrl = new URL("/api/auth/session-init", env.appUrl);
+  sessionInitUrl.searchParams.set("sid", sessionId);
 
-  response.cookies.set("__session", sessionId, {
-    httpOnly: true,
-    secure: env.isProduction,
-    sameSite: "strict",
-    path: "/",
-    maxAge: tokens.refresh_expires_in,
-  });
-
+  const response = NextResponse.redirect(sessionInitUrl);
   response.cookies.delete("__state");
 
   return response;
