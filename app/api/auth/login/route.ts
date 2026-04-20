@@ -24,8 +24,8 @@ export async function GET() {
 
   cookieStore.set("__state", state, {
     httpOnly: true,
-    secure: true,        // 🔥 FORCE TRUE
-    sameSite: "none",    // 🔥 WAJIB untuk cross-site OAuth
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
     path: "/",
     maxAge: 300,
   });

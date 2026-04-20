@@ -21,6 +21,7 @@ jobs:
         run: npm ci
 
       - name: Drift detection
+        id: drift
         run: |
           AUTH_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
             middleware.ts \
@@ -51,6 +52,7 @@ jobs:
           fi
 
       - name: Run auth tests
+        id: test
         run: npm run test:auth -- --ci
 
       - name: Upload coverage artifact
@@ -69,9 +71,9 @@ jobs:
           echo "### Enforcement Status" >> $GITHUB_STEP_SUMMARY
           echo "| Gate | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Drift Detection | Passed |" >> $GITHUB_STEP_SUMMARY
-          echo "| Coverage Threshold | branches 95%, functions 95%, lines 95%, statements 95% |" >> $GITHUB_STEP_SUMMARY
-          echo "| Snapshot Integrity | Enforced (--ci mode) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Drift Detection | ${{ steps.drift.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Coverage Threshold | ${{ steps.test.outcome == 'success' && '✅ 95% met' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Snapshot Integrity | ${{ steps.test.outcome == 'success' && '✅ Enforced' || '❌ Drift detected' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f coverage/coverage-summary.json ]; then
             echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY

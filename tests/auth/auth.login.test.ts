@@ -45,7 +45,7 @@ describe("GET /api/auth/login", () => {
       "deterministic-state-hex-value-for-testing",
       expect.objectContaining({
         httpOnly: true,
-        secure: true,
+        secure: false,
         sameSite: "none",
         path: "/",
         maxAge: 300,
@@ -82,7 +82,7 @@ describe("GET /api/auth/login", () => {
 
     const [, , options] = mockCookieStore.set.mock.calls[0];
     expect(options.httpOnly).toBe(true);
-    expect(options.secure).toBe(true);
+    expect(options.secure).toBe(false);
     expect(options.sameSite).toBe("none");
     expect(options.maxAge).toBe(300);
   });
