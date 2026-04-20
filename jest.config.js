@@ -12,10 +12,13 @@ module.exports = {
   collectCoverageFrom: [
     "middleware.ts",
     "app/api/auth/session-init/**/*.ts",
+    "app/api/auth/callback/**/*.ts",
+    "app/api/auth/login/**/*.ts",
+    "lib/auth/keycloak.ts",
   ],
   coverageThreshold: {
     global: {
-      branches: 90,
+      branches: 95,
       functions: 95,
       lines: 95,
       statements: 95,
