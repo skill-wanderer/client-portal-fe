@@ -1,8 +1,8 @@
+// app/api/auth/login/route.ts
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { getAuthorizationUrl } from "@/lib/auth/keycloak";
-import { env } from "@/lib/env";
 
 /**
  * GET /api/auth/login
@@ -11,15 +11,23 @@ import { env } from "@/lib/env";
  * then redirects to Keycloak authorization endpoint.
  */
 export async function GET() {
+  const cookieStore = await cookies();
+
+  // Prevent double login from overwriting state
+  const existing = cookieStore.get("__state");
+  if (existing) {
+    const authUrl = getAuthorizationUrl(existing.value);
+    return NextResponse.redirect(authUrl);
+  }
+
   const state = randomBytes(32).toString("hex");
 
-  const cookieStore = await cookies();
   cookieStore.set("__state", state, {
     httpOnly: true,
-    secure: env.isProduction,
-    sameSite: "strict",
+    secure: true,        // 🔥 FORCE TRUE
+    sameSite: "none",    // 🔥 WAJIB untuk cross-site OAuth
     path: "/",
-    maxAge: 300, // 5 minutes
+    maxAge: 300,
   });
 
   const authUrl = getAuthorizationUrl(state);

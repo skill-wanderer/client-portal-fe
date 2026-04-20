@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 
@@ -33,11 +32,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             {errorMessage}
           </div>
         )}
-        <Link href="/api/auth/login" className="block">
+        <a href="/api/auth/login" className="block">
           <Button className="w-full" type="button">
             Continue with SSO
           </Button>
-        </Link>
+        </a>
       </div>
     </Container>
   );

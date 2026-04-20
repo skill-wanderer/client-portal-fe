@@ -1,3 +1,4 @@
+// app/api/auth/callback/route.ts
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -18,9 +19,14 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state");
   const loginUrl = new URL("/login", env.appUrl);
 
+  console.log("CALLBACK HIT");
+  console.log("CODE:", code);
+  console.log("STATE:", state);
+
   // Validate required params
   if (!code || !state) {
     loginUrl.searchParams.set("error", "invalid_state");
+    console.log("REDIRECT LOGIN REASON");
     return NextResponse.redirect(loginUrl);
   }
 
@@ -28,8 +34,11 @@ export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const storedState = cookieStore.get("__state")?.value;
 
+  console.log("STORED STATE:", storedState);
+
   if (!storedState || storedState !== state) {
     loginUrl.searchParams.set("error", "invalid_state");
+    console.log("REDIRECT LOGIN REASON");
     const response = NextResponse.redirect(loginUrl);
     response.cookies.delete("__state");
     return response;
@@ -41,6 +50,7 @@ export async function GET(request: NextRequest) {
     tokens = await exchangeCode(code);
   } catch {
     loginUrl.searchParams.set("error", "auth_failed");
+    console.log("REDIRECT LOGIN REASON");
     const response = NextResponse.redirect(loginUrl);
     response.cookies.delete("__state");
     return response;
@@ -64,19 +74,15 @@ export async function GET(request: NextRequest) {
     createdAt: now,
   });
 
-  // Set session cookie + clear state cookie
-  const dashboardUrl = new URL("/dashboard", env.appUrl);
-  const response = NextResponse.redirect(dashboardUrl);
+  // Redirect to same-site session-init to set cookie (avoids cross-site redirect cookie drop)
+  console.log("REDIRECT TO SESSION INIT:", sessionId);
+  const sessionInitUrl = new URL("/api/auth/session-init", env.appUrl);
+  sessionInitUrl.searchParams.set("sid", sessionId);
 
-  response.cookies.set("__session", sessionId, {
-    httpOnly: true,
-    secure: env.isProduction,
-    sameSite: "strict",
-    path: "/",
-    maxAge: tokens.refresh_expires_in,
-  });
-
+  const response = NextResponse.redirect(sessionInitUrl);
   response.cookies.delete("__state");
 
+  console.log("COOKIES:", request.headers.get("cookie"));
+  
   return response;
 }

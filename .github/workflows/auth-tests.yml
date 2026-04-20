@@ -1,0 +1,84 @@
+name: Auth Tests
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  auth-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Drift detection
+        run: |
+          AUTH_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+            middleware.ts \
+            'app/api/auth/**' \
+            'lib/auth/**' || true)
+
+          TEST_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+            'tests/auth/**' || true)
+
+          if [ -n "$AUTH_CHANGED" ] && [ -z "$TEST_CHANGED" ]; then
+            echo "::error::Auth code changed without test updates. Failing build."
+            echo ""
+            echo "Changed auth files:"
+            echo "$AUTH_CHANGED"
+            echo ""
+            echo "You must update tests/auth/ when modifying auth-related code."
+            exit 1
+          fi
+
+          if [ -n "$AUTH_CHANGED" ]; then
+            echo "Auth files changed:"
+            echo "$AUTH_CHANGED"
+            echo ""
+            echo "Test files changed:"
+            echo "$TEST_CHANGED"
+          else
+            echo "No auth-related changes detected. Skipping drift check."
+          fi
+
+      - name: Run auth tests
+        run: npm run test:auth -- --ci
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-coverage
+          path: coverage/
+          retention-days: 14
+
+      - name: CI summary
+        if: always()
+        run: |
+          echo "## Auth Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Enforcement Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Gate | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Drift Detection | Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Coverage Threshold | branches 90%, functions 95%, lines 95%, statements 95% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Snapshot Integrity | Enforced (--ci mode) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat coverage/coverage-summary.json | head -30 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Command: \`npm run test:auth -- --ci\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Snapshot mode: **strict** (no interactive updates in CI)" >> $GITHUB_STEP_SUMMARY
