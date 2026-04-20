@@ -21,13 +21,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 🚨 TEMP DEBUG: bypass sessionStore validation if query session exists
-  const querySession = request.nextUrl.searchParams.get("session");
-  if (querySession) {
-    return NextResponse.next();
-  }
-
-  // Normal mode: cookie-based session validation
+  // Cookie-based session validation
   const sessionId = request.cookies.get("__session")?.value;
 
   if (!sessionId) {
@@ -53,9 +47,6 @@ export async function middleware(request: NextRequest) {
     response.cookies.delete("__session");
     return response;
   }
-
-  console.log("SESSION ID:", sessionId)
-  console.log("SESSION DATA:", session)
 
   // Session valid — proceed
   return NextResponse.next();

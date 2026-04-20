@@ -9,8 +9,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${env.appUrl}/login`)
   }
 
-  // 🚨 PASS SESSION VIA QUERY (TEMP SOLUTION)
-  return NextResponse.redirect(
-    `${env.appUrl}/dashboard?session=${sessionId}`
-  )
+  // Set session cookie and redirect to dashboard
+  const response = NextResponse.redirect(`${env.appUrl}/dashboard`)
+  response.cookies.set("__session", sessionId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  })
+
+  return response
 }

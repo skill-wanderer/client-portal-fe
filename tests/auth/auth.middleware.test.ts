@@ -1,6 +1,6 @@
 /**
  * Auth Middleware Test
- * Validates: ?session query bypasses auth, missing session redirects to /login
+ * Validates: missing session redirects to /login, valid session allows access
  */
 
 import { createTestRequest } from "../testServer";
@@ -45,20 +45,8 @@ describe("Auth Middleware", () => {
     });
   });
 
-  describe("Query session bypass", () => {
-    it("should allow access when ?session query param is present", async () => {
-      const request = createTestRequest(
-        "http://localhost:3000/dashboard?session=test-session-123"
-      );
-      const response = await middleware(request);
-
-      expect(response.headers.get("location")).toBeNull();
-      expect(response.status).not.toBe(307);
-    });
-  });
-
   describe("Protected routes without session", () => {
-    it("should redirect to /login when no cookie and no query session", async () => {
+    it("should redirect to /login when no cookie present", async () => {
       const request = createTestRequest("http://localhost:3000/dashboard");
       const response = await middleware(request);
 

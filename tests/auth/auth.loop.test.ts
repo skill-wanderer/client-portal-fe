@@ -8,18 +8,18 @@ import { followRedirects } from "../testServer";
 
 describe("Auth Loop Detection", () => {
   it("should NOT loop when session-init has a valid sid", async () => {
-    // Simulate: session-init with sid → dashboard (terminal)
+    // Simulate: session-init with sid → dashboard (terminal, cookie-based auth)
     const handler = async (req: NextRequest) => {
       const url = new URL(req.url);
 
       if (url.pathname === "/api/auth/session-init" && url.searchParams.get("sid")) {
         return NextResponse.redirect(
-          new URL(`/dashboard?session=${url.searchParams.get("sid")}`, url.origin)
+          new URL("/dashboard", url.origin)
         );
       }
 
-      // Dashboard with ?session is terminal (no redirect)
-      if (url.pathname === "/dashboard" && url.searchParams.get("session")) {
+      // Dashboard is terminal when reached via proper redirect chain
+      if (url.pathname === "/dashboard") {
         return new Response("OK", { status: 200 });
       }
 

@@ -47,12 +47,12 @@ async function simulateFullAuthFlow(sessionId: string): Promise<{
       return sessionInitHandler(req);
     }
 
-    // Dashboard with session param = terminal (no redirect)
-    if (url.pathname === "/dashboard" && url.searchParams.get("session")) {
+    // Dashboard = terminal (auth via cookie, not query param)
+    if (url.pathname === "/dashboard") {
       return new Response("OK", { status: 200 });
     }
 
-    // Any other path without session = redirect to login
+    // Any other path = redirect to login
     if (url.pathname === "/login") {
       return new Response("Login Page", { status: 200 });
     }
@@ -116,7 +116,7 @@ describe("Auth Contract Behavior", () => {
       expect(location).not.toContain("/login");
     });
 
-    it("must include session param in dashboard redirect", async () => {
+    it("must set session cookie in dashboard redirect", async () => {
       const sid = "session-xyz-123";
       const request = createTestRequest(
         `http://localhost:3000/api/auth/session-init?sid=${sid}`
@@ -125,7 +125,13 @@ describe("Auth Contract Behavior", () => {
       const response = await sessionInitHandler(request);
       const location = getRedirectLocation(response);
 
-      expect(location).toContain(`session=${sid}`);
+      expect(location).toContain("/dashboard");
+      expect(location).not.toContain("session=");
+
+      // Verify cookie is set with session id
+      const setCookie = response.headers.get("set-cookie");
+      expect(setCookie).toContain("__session");
+      expect(setCookie).toContain(sid);
     });
 
     it("must redirect to login when sid is absent", async () => {
@@ -186,16 +192,16 @@ describe("Auth Contract Behavior", () => {
       const location = getRedirectLocation(response);
       const url = new URL(location!);
 
-      // Snapshot: pathname and search params structure
+      // Snapshot: pathname (no query param — session via cookie now)
       expect({
         pathname: url.pathname,
         hasSessionParam: url.searchParams.has("session"),
         sessionValue: url.searchParams.get("session"),
       }).toMatchInlineSnapshot(`
         {
-          "hasSessionParam": true,
+          "hasSessionParam": false,
           "pathname": "/dashboard",
-          "sessionValue": "stable-check",
+          "sessionValue": null,
         }
       `);
     });
