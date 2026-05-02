@@ -65,11 +65,14 @@ export async function GET(request: NextRequest) {
     createdAt: now,
   });
 
-  // Redirect to same-site session-init to set cookie (avoids cross-site redirect cookie drop)
-  const sessionInitUrl = new URL("/api/auth/session-init", env.appUrl);
-  sessionInitUrl.searchParams.set("sid", sessionId);
-
-  const response = NextResponse.redirect(sessionInitUrl);
+  const dashboardUrl = new URL("/dashboard", env.appUrl);
+  const response = NextResponse.redirect(dashboardUrl);
+  response.cookies.set("__session", sessionId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  });
   response.cookies.delete("__state");
 
   return response;

@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
+import { env } from "@/lib/env";
 import { getAuthorizationUrl } from "@/lib/auth/keycloak";
 
 /**
@@ -24,8 +25,8 @@ export async function GET() {
 
   cookieStore.set("__state", state, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "none",
+    secure: env.appUrl.startsWith("https://"),
+    sameSite: "lax",
     path: "/",
     maxAge: 300,
   });
