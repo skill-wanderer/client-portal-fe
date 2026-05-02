@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { getSessionCookieOptions } from "@/lib/auth/config";
 import { decodeIdToken, exchangeCode, extractUser } from "@/lib/auth/keycloak";
 import { sessionStore } from "@/lib/auth/session";
 import { env } from "@/lib/env";
@@ -65,11 +66,13 @@ export async function GET(request: NextRequest) {
     createdAt: now,
   });
 
-  // Redirect to same-site session-init to set cookie (avoids cross-site redirect cookie drop)
-  const sessionInitUrl = new URL("/api/auth/session-init", env.appUrl);
-  sessionInitUrl.searchParams.set("sid", sessionId);
-
-  const response = NextResponse.redirect(sessionInitUrl);
+  const dashboardUrl = new URL("/dashboard", env.appUrl);
+  const response = NextResponse.redirect(dashboardUrl);
+  response.cookies.set(
+    "__session",
+    sessionId,
+    getSessionCookieOptions(tokens.refresh_expires_in)
+  );
   response.cookies.delete("__state");
 
   return response;

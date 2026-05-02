@@ -1,4 +1,7 @@
 import type { Session } from "@/types";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
 /**
  * Session store interface contract.
@@ -10,23 +13,56 @@ export interface SessionStore {
   delete(sessionId: string): Promise<void>;
 }
 
-/**
- * In-memory session store implementation.
- * Suitable for development and single-process deployments.
- * Replace with Redis adapter for production horizontal scaling.
- */
-const store = new Map<string, Session>();
+type SessionRecord = Record<string, Session>;
+
+const SESSION_STORE_FILE = join(
+  tmpdir(),
+  "client-portal-fe",
+  "sessions.json"
+);
+
+async function readStore(): Promise<SessionRecord> {
+  try {
+    const raw = await readFile(SESSION_STORE_FILE, "utf8");
+    return JSON.parse(raw) as SessionRecord;
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return {};
+    }
+
+    throw error;
+  }
+}
+
+async function writeStore(store: SessionRecord): Promise<void> {
+  await mkdir(dirname(SESSION_STORE_FILE), { recursive: true });
+
+  const temporaryFile = `${SESSION_STORE_FILE}.${process.pid}.${Date.now()}.tmp`;
+
+  await writeFile(temporaryFile, JSON.stringify(store), "utf8");
+  await rename(temporaryFile, SESSION_STORE_FILE);
+}
 
 export const sessionStore: SessionStore = {
   async get(sessionId: string): Promise<Session | null> {
-    return store.get(sessionId) ?? null;
+    const store = await readStore();
+    return store[sessionId] ?? null;
   },
 
   async set(sessionId: string, session: Session): Promise<void> {
-    store.set(sessionId, session);
+    const store = await readStore();
+    store[sessionId] = session;
+    await writeStore(store);
   },
 
   async delete(sessionId: string): Promise<void> {
-    store.delete(sessionId);
+    const store = await readStore();
+    delete store[sessionId];
+    await writeStore(store);
   },
 };
