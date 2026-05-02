@@ -14,13 +14,6 @@ import { getAuthorizationUrl } from "@/lib/auth/keycloak";
 export async function GET() {
   const cookieStore = await cookies();
 
-  // Prevent double login from overwriting state
-  const existing = cookieStore.get("__state");
-  if (existing) {
-    const authUrl = getAuthorizationUrl(existing.value);
-    return NextResponse.redirect(authUrl);
-  }
-
   const state = randomBytes(32).toString("hex");
 
   cookieStore.set("__state", state, {

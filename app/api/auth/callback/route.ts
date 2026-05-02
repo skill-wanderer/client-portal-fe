@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { getSessionCookieOptions } from "@/lib/auth/config";
 import { decodeIdToken, exchangeCode, extractUser } from "@/lib/auth/keycloak";
 import { sessionStore } from "@/lib/auth/session";
 import { env } from "@/lib/env";
@@ -67,12 +68,11 @@ export async function GET(request: NextRequest) {
 
   const dashboardUrl = new URL("/dashboard", env.appUrl);
   const response = NextResponse.redirect(dashboardUrl);
-  response.cookies.set("__session", sessionId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-  });
+  response.cookies.set(
+    "__session",
+    sessionId,
+    getSessionCookieOptions(tokens.refresh_expires_in)
+  );
   response.cookies.delete("__state");
 
   return response;

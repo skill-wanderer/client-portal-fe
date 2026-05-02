@@ -1,5 +1,6 @@
 // app/api/auth/session-init/route.ts
 import { NextRequest, NextResponse } from "next/server"
+import { getRemainingSessionMaxAge, getSessionCookieOptions } from "@/lib/auth/config"
 import { sessionStore } from "@/lib/auth/session"
 import { env } from "@/lib/env"
 
@@ -18,12 +19,11 @@ export async function GET(req: NextRequest) {
 
   // Set session cookie and redirect to dashboard
   const response = NextResponse.redirect(`${env.appUrl}/dashboard`)
-  response.cookies.set("__session", sessionId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-  })
+  response.cookies.set(
+    "__session",
+    sessionId,
+    getSessionCookieOptions(getRemainingSessionMaxAge(session.refreshExpiresAt))
+  )
 
   return response
 }
