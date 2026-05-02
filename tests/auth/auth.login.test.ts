@@ -5,6 +5,12 @@
 
 import { GET } from "@/app/api/auth/login/route";
 
+jest.mock("@/lib/env", () => ({
+  env: {
+    appUrl: "https://client-portal.test:3000",
+  },
+}));
+
 // Mock next/headers cookies()
 const mockCookieStore = {
   get: jest.fn(),
@@ -45,8 +51,8 @@ describe("GET /api/auth/login", () => {
       "deterministic-state-hex-value-for-testing",
       expect.objectContaining({
         httpOnly: true,
-        secure: false,
-        sameSite: "none",
+        secure: true,
+        sameSite: "lax",
         path: "/",
         maxAge: 300,
       })
@@ -61,18 +67,29 @@ describe("GET /api/auth/login", () => {
     );
   });
 
-  test("reuses existing state cookie if present (prevents double-login)", async () => {
+  test("always generates a fresh state even when a prior state cookie exists", async () => {
     mockCookieStore.get.mockReturnValue({ value: "existing-state-abc" });
 
     const response = await GET();
 
-    // Should NOT set a new cookie
-    expect(mockCookieStore.set).not.toHaveBeenCalled();
+    expect(mockCookieStore.set).toHaveBeenCalledWith(
+      "__state",
+      "deterministic-state-hex-value-for-testing",
+      expect.objectContaining({
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 300,
+      })
+    );
 
-    // Should redirect with existing state
     expect(response.status).toBe(307);
     const location = response.headers.get("location");
-    expect(location).toBe("http://keycloak/auth?state=existing-state-abc");
+    expect(location).toBe(
+      "http://keycloak/auth?state=deterministic-state-hex-value-for-testing"
+    );
+    expect(location).not.toContain("existing-state-abc");
   });
 
   test("state cookie has correct security attributes", async () => {
@@ -82,8 +99,8 @@ describe("GET /api/auth/login", () => {
 
     const [, , options] = mockCookieStore.set.mock.calls[0];
     expect(options.httpOnly).toBe(true);
-    expect(options.secure).toBe(false);
-    expect(options.sameSite).toBe("none");
+    expect(options.secure).toBe(true);
+    expect(options.sameSite).toBe("lax");
     expect(options.maxAge).toBe(300);
   });
 });
