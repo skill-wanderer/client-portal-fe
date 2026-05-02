@@ -3,8 +3,8 @@
  * Validates behavioral contracts across the auth flow with snapshot drift protection.
  *
  * Tests:
- * - callback must redirect to session-init
- * - session-init must not redirect to login when sid exists
+ * - callback must redirect directly to dashboard
+ * - session-init must not issue a cookie for an invalid sid
  * - full auth flow must end in dashboard
  */
 
@@ -21,11 +21,36 @@ jest.mock("@/lib/env", () => ({
   },
 }));
 
+jest.mock("@/lib/auth/session", () => ({
+  sessionStore: {
+    get: jest.fn(),
+    set: jest.fn(),
+    delete: jest.fn(),
+  },
+}));
+
 import { GET as sessionInitHandler } from "@/app/api/auth/session-init/route";
+import { sessionStore } from "@/lib/auth/session";
+
+const mockedSessionStore = sessionStore as jest.Mocked<typeof sessionStore>;
+
+const validSession = {
+  accessToken: "access-token",
+  refreshToken: "refresh-token",
+  idToken: "id-token",
+  user: {
+    id: "user-1",
+    email: "user@example.com",
+    name: "Test User",
+    roles: ["user"],
+  },
+  accessExpiresAt: Math.floor(Date.now() / 1000) + 300,
+  refreshExpiresAt: Math.floor(Date.now() / 1000) + 1800,
+  createdAt: Math.floor(Date.now() / 1000),
+};
 
 /**
- * Simulates the full auth flow from callback → session-init → dashboard.
- * Mocks Keycloak token exchange and session creation.
+ * Simulates the full auth flow from callback → dashboard.
  */
 async function simulateFullAuthFlow(sessionId: string): Promise<{
   chain: string[];
@@ -35,16 +60,17 @@ async function simulateFullAuthFlow(sessionId: string): Promise<{
   const handler = async (req: NextRequest) => {
     const url = new URL(req.url);
 
-    // Simulate callback: always redirects to session-init with sid
+    // Simulate callback: sets cookie server-side and redirects directly to dashboard.
     if (url.pathname === "/api/auth/callback") {
-      const sessionInitUrl = new URL("/api/auth/session-init", url.origin);
-      sessionInitUrl.searchParams.set("sid", sessionId);
-      return NextResponse.redirect(sessionInitUrl);
-    }
-
-    // Use real session-init handler
-    if (url.pathname === "/api/auth/session-init") {
-      return sessionInitHandler(req);
+      const dashboardUrl = new URL("/dashboard", url.origin);
+      const response = NextResponse.redirect(dashboardUrl);
+      response.cookies.set("__session", sessionId, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+      });
+      return response;
     }
 
     // Dashboard = terminal (auth via cookie, not query param)
@@ -72,39 +98,35 @@ async function simulateFullAuthFlow(sessionId: string): Promise<{
 }
 
 describe("Auth Contract Behavior", () => {
-  describe("Callback → session-init contract", () => {
-    it("callback must redirect to /api/auth/session-init with sid", async () => {
-      const sessionId = "contract-test-session-001";
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedSessionStore.get.mockResolvedValue(validSession);
+  });
 
-      // Simulate what callback does: redirect to session-init
-      const sessionInitUrl = new URL(
-        "/api/auth/session-init",
-        "http://localhost:3000"
+  describe("Callback success contract", () => {
+    it("callback must redirect directly to /dashboard", async () => {
+      const response = NextResponse.redirect(
+        new URL("/dashboard", "http://localhost:3000")
       );
-      sessionInitUrl.searchParams.set("sid", sessionId);
-      const response = NextResponse.redirect(sessionInitUrl);
       const location = getRedirectLocation(response);
 
-      expect(location).toContain("/api/auth/session-init");
-      expect(location).toContain("sid=");
+      expect(location).toBe("http://localhost:3000/dashboard");
     });
 
-    it("callback redirect target must include sid parameter", async () => {
-      const sessionId = "uuid-format-session-id";
-      const sessionInitUrl = new URL(
-        "/api/auth/session-init",
-        "http://localhost:3000"
+    it("callback redirect target must not include sid parameter", async () => {
+      const response = NextResponse.redirect(
+        new URL("/dashboard", "http://localhost:3000")
       );
-      sessionInitUrl.searchParams.set("sid", sessionId);
+      const location = getRedirectLocation(response);
+      const url = new URL(location!);
 
-      const url = new URL(sessionInitUrl.toString());
-      expect(url.pathname).toBe("/api/auth/session-init");
-      expect(url.searchParams.get("sid")).toBe(sessionId);
+      expect(url.pathname).toBe("/dashboard");
+      expect(url.searchParams.get("sid")).toBeNull();
     });
   });
 
-  describe("session-init behavior contract", () => {
-    it("must redirect to dashboard when sid exists", async () => {
+  describe("session-init legacy guard contract", () => {
+    it("must redirect to dashboard when sid resolves to a server session", async () => {
       const request = createTestRequest(
         "http://localhost:3000/api/auth/session-init?sid=valid-session-id"
       );
@@ -132,6 +154,19 @@ describe("Auth Contract Behavior", () => {
       const setCookie = response.headers.get("set-cookie");
       expect(setCookie).toContain("__session");
       expect(setCookie).toContain(sid);
+    });
+
+    it("must redirect to login when sid is not backed by a server session", async () => {
+      mockedSessionStore.get.mockResolvedValueOnce(null);
+      const request = createTestRequest(
+        "http://localhost:3000/api/auth/session-init?sid=invalid-session-id"
+      );
+
+      const response = await sessionInitHandler(request);
+      const location = getRedirectLocation(response);
+
+      expect(location).toContain("/login");
+      expect(response.headers.get("set-cookie")).toBeNull();
     });
 
     it("must redirect to login when sid is absent", async () => {
@@ -163,7 +198,6 @@ describe("Auth Contract Behavior", () => {
         .toMatchInlineSnapshot(`
         [
           "/api/auth/callback",
-          "/api/auth/session-init",
           "/dashboard",
         ]
       `);
@@ -172,8 +206,8 @@ describe("Auth Contract Behavior", () => {
     it("full flow must not exceed 3 hops", async () => {
       const result = await simulateFullAuthFlow("hop-count-session");
 
-      // callback → session-init → dashboard = 3 entries in chain
-      expect(result.chain.length).toBeLessThanOrEqual(3);
+      // callback → dashboard = 2 entries in chain
+      expect(result.chain.length).toBeLessThanOrEqual(2);
     });
 
     it("full flow must never visit /login", async () => {

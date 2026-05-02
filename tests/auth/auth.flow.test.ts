@@ -12,10 +12,41 @@ jest.mock("@/lib/env", () => ({
   },
 }));
 
+jest.mock("@/lib/auth/session", () => ({
+  sessionStore: {
+    get: jest.fn(),
+    set: jest.fn(),
+    delete: jest.fn(),
+  },
+}));
+
 // Import after mock
 import { GET as sessionInitHandler } from "@/app/api/auth/session-init/route";
+import { sessionStore } from "@/lib/auth/session";
+
+const mockedSessionStore = sessionStore as jest.Mocked<typeof sessionStore>;
+
+const validSession = {
+  accessToken: "access-token",
+  refreshToken: "refresh-token",
+  idToken: "id-token",
+  user: {
+    id: "user-1",
+    email: "user@example.com",
+    name: "Test User",
+    roles: ["user"],
+  },
+  accessExpiresAt: Math.floor(Date.now() / 1000) + 300,
+  refreshExpiresAt: Math.floor(Date.now() / 1000) + 1800,
+  createdAt: Math.floor(Date.now() / 1000),
+};
 
 describe("Auth Flow: session-init → dashboard", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedSessionStore.get.mockResolvedValue(validSession);
+  });
+
   it("should redirect to /dashboard and set session cookie when sid is provided", async () => {
     const request = createTestRequest(
       "http://localhost:3000/api/auth/session-init?sid=test-session-id-123"
@@ -57,5 +88,8 @@ describe("Auth Flow: session-init → dashboard", () => {
 
     expect(setCookie).toContain(sessionId);
     expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).toMatch(/SameSite=Strict/i);
+    expect(setCookie).toMatch(/Max-Age=\d+/);
   });
 });

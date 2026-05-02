@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { getLogoutUrl } from "@/lib/auth/keycloak";
 import { sessionStore } from "@/lib/auth/session";
 
@@ -9,7 +9,7 @@ import { sessionStore } from "@/lib/auth/session";
  * Destroys server-side session, clears cookie,
  * redirects to Keycloak logout endpoint.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
   const sessionId = cookieStore.get("__session")?.value;
 
@@ -28,5 +28,5 @@ export async function POST() {
 
   // Redirect to Keycloak logout or login page
   const redirectUrl = logoutRedirectUrl ?? "/login";
-  return NextResponse.redirect(new URL(redirectUrl));
+  return NextResponse.redirect(new URL(redirectUrl, request.url));
 }

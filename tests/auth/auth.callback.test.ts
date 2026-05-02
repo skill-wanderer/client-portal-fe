@@ -130,7 +130,7 @@ describe("GET /api/auth/callback", () => {
     expect(location).toBe("http://localhost:3000/login?error=auth_failed");
   });
 
-  test("creates session and redirects to session-init on success", async () => {
+  test("creates session, sets cookie, and redirects to dashboard on success", async () => {
     mockCookieStore.get.mockReturnValue({ value: "correct-state" });
     mockExchangeCode.mockResolvedValueOnce({
       access_token: "at-new",
@@ -175,12 +175,51 @@ describe("GET /api/auth/callback", () => {
       })
     );
 
-    // Should redirect to session-init
+    // Should redirect directly to dashboard
     expect(response.status).toBe(307);
     const location = response.headers.get("location");
-    expect(location).toBe(
-      "http://localhost:3000/api/auth/session-init?sid=deterministic-uuid-1234"
-    );
+    expect(location).toBe("http://localhost:3000/dashboard");
+
+    const setCookie = response.headers.get("set-cookie");
+    expect(setCookie).toContain("__session=deterministic-uuid-1234");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).toMatch(/SameSite=Strict/i);
+    expect(setCookie).toContain("Max-Age=1800");
+  });
+
+  test("does not expose sid in the success redirect URL", async () => {
+    mockCookieStore.get.mockReturnValue({ value: "correct-state" });
+    mockExchangeCode.mockResolvedValueOnce({
+      access_token: "at-new",
+      refresh_token: "rt-new",
+      id_token: "it-new",
+      expires_in: 300,
+      refresh_expires_in: 1800,
+    });
+    mockDecodeIdToken.mockReturnValue({
+      sub: "user-1",
+      email: "user@test.com",
+      name: "Test User",
+      realm_access: { roles: ["user"] },
+    });
+    mockExtractUser.mockReturnValue({
+      id: "user-1",
+      email: "user@test.com",
+      name: "Test User",
+      roles: ["user"],
+    });
+
+    const request = createCallbackRequest({
+      code: "valid-code",
+      state: "correct-state",
+    });
+
+    const response = await GET(request);
+    const location = response.headers.get("location");
+
+    expect(location).toBe("http://localhost:3000/dashboard");
+    expect(location).not.toContain("sid=");
   });
 
   test("deletes __state cookie on successful auth", async () => {
