@@ -69,11 +69,13 @@ export async function getCurrentPortalAuthContext(): Promise<PortalAuthContext |
     [sessionEmail]
   );
 
-  if (result.rowCount === 0) {
+  const matchingUserCount = result.rows.length;
+
+  if (matchingUserCount === 0) {
     throw new Error("portal_user_not_found");
   }
 
-  if (result.rowCount > 1) {
+  if (matchingUserCount > 1) {
     throw new Error("portal_user_ambiguous");
   }
 

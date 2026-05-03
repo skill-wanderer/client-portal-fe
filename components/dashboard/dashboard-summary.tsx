@@ -32,17 +32,20 @@ const summaryCards = [
 
 export function DashboardSummary({ summary }: DashboardSummaryProps) {
   return (
-    <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {summaryCards.map((card) => (
         <article
           key={card.key}
-          className={`rounded-3xl border border-zinc-200 bg-gradient-to-br p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 ${card.accent}`}
+          className={`ui-surface min-h-41 overflow-hidden rounded-[1.75rem] border border-zinc-200/80 bg-linear-to-br p-5 shadow-sm shadow-zinc-950/3 transition-transform duration-200 hover:-translate-y-0.5 dark:border-zinc-800 dark:bg-zinc-950 ${card.accent}`}
         >
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
             {card.label}
           </p>
-          <p className="mt-4 text-4xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+          <p className="mt-6 text-4xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
             {summary[card.key]}
+          </p>
+          <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+            Live session-scoped portal data
           </p>
         </article>
       ))}
