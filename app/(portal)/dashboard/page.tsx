@@ -153,42 +153,52 @@ export default async function DashboardPage() {
 
   return (
     <Container className="py-8">
-      <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+      <div className="space-y-8">
+        <section className="overflow-hidden rounded-4xl border border-zinc-200/80 bg-white shadow-sm shadow-zinc-950/3 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="border-b border-zinc-200/80 bg-zinc-50/70 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
               Client portal
             </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Welcome back, {dashboardData.user.displayName}
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              This dashboard is backed by the live session-scoped API and shows your active projects, pending tasks, and recent files.
-            </p>
           </div>
-          <dl className="grid gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)] lg:items-end">
             <div>
-              <dt className="font-medium text-zinc-500 dark:text-zinc-500">Email</dt>
-              <dd className="mt-1 text-zinc-900 dark:text-zinc-100">{dashboardData.user.email}</dd>
+              <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl">
+                Welcome back, {dashboardData.user.displayName}
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                Your live portal view keeps projects, tasks, messages, and recent files aligned in one place without leaving the protected session flow.
+              </p>
             </div>
-            <div>
-              <dt className="font-medium text-zinc-500 dark:text-zinc-500">Company</dt>
-              <dd className="mt-1 text-zinc-900 dark:text-zinc-100">
-                {dashboardData.user.companyName ?? "Not available"}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </section>
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <div className="rounded-[1.35rem] border border-zinc-200/80 bg-zinc-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/80">
+                <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                  Email
+                </dt>
+                <dd className="mt-2 text-sm font-medium text-zinc-950 dark:text-zinc-100">
+                  {dashboardData.user.email}
+                </dd>
+              </div>
+              <div className="rounded-[1.35rem] border border-zinc-200/80 bg-zinc-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/80">
+                <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                  Company
+                </dt>
+                <dd className="mt-2 text-sm font-medium text-zinc-950 dark:text-zinc-100">
+                  {dashboardData.user.companyName ?? "Not available"}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </section>
 
-      <DashboardSummary summary={dashboardData.summary} />
+        <DashboardSummary summary={dashboardData.summary} />
 
-      <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,0.95fr)]">
-        <div className="space-y-8">
-          <ProjectList projects={dashboardData.projects} />
-          <TaskList tasks={dashboardData.tasks} />
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,0.95fr)]">
+          <div className="space-y-8">
+            <ProjectList projects={dashboardData.projects} />
+            <TaskList tasks={dashboardData.tasks} />
+          </div>
+          <FileList files={dashboardData.files} />
         </div>
-        <FileList files={dashboardData.files} />
       </div>
     </Container>
   );

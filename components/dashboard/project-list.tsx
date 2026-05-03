@@ -26,10 +26,10 @@ function formatDate(value: string | null) {
 
 export function ProjectList({ projects }: ProjectListProps) {
   return (
-    <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <section className="rounded-[1.75rem] border border-zinc-200/80 bg-white p-6 shadow-sm shadow-zinc-950/3 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
             Projects
           </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
@@ -48,14 +48,14 @@ export function ProjectList({ projects }: ProjectListProps) {
           projects.map((project) => (
             <article
               key={project.id}
-              className="rounded-2xl border border-zinc-100 p-5 dark:border-zinc-900"
+              className="group rounded-3xl border border-zinc-200/70 bg-zinc-50/70 p-5 transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
             >
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                     <Link
                       href={`/projects/${project.id}`}
-                      className="transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                      className="transition-colors hover:text-zinc-600 group-hover:text-zinc-950 dark:hover:text-zinc-300 dark:group-hover:text-zinc-100"
                     >
                       {project.name}
                     </Link>
