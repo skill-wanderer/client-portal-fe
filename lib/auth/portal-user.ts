@@ -28,7 +28,7 @@ export interface PortalUser {
 export interface PortalAuthContext {
   sessionId: string;
   session: Session;
-  portalUser: PortalUser | null;
+  portalUser: PortalUser;
 }
 
 export async function getCurrentPortalAuthContext(): Promise<PortalAuthContext | null> {
@@ -45,6 +45,12 @@ export async function getCurrentPortalAuthContext(): Promise<PortalAuthContext |
     return null;
   }
 
+  const sessionEmail = session.user.email?.trim();
+
+  if (!sessionEmail) {
+    throw new Error("missing_session_user_email");
+  }
+
   const result = await query<PortalUserRow>(
     `
       SELECT
@@ -59,17 +65,18 @@ export async function getCurrentPortalAuthContext(): Promise<PortalAuthContext |
       FROM users
       WHERE email = $1
         AND status = 'active'
-      LIMIT 1
     `,
-    [session.user.email]
+    [sessionEmail]
   );
 
-  if (!result.rowCount) {
-    return {
-      sessionId,
-      session,
-      portalUser: null,
-    };
+  const matchingUserCount = result.rows.length;
+
+  if (matchingUserCount === 0) {
+    throw new Error("portal_user_not_found");
+  }
+
+  if (matchingUserCount > 1) {
+    throw new Error("portal_user_ambiguous");
   }
 
   const row = result.rows[0];

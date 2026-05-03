@@ -34,14 +34,36 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const authContext = await getCurrentPortalAuthContext();
+  let authContext;
+
+  try {
+    authContext = await getCurrentPortalAuthContext();
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "portal_user_not_found") {
+        return NextResponse.json({ error: "user_not_provisioned" }, { status: 403 });
+      }
+
+      if (error.message === "portal_user_ambiguous") {
+        return NextResponse.json(
+          { error: "user_mapping_conflict" },
+          { status: 500 }
+        );
+      }
+
+      if (error.message === "missing_session_user_email") {
+        return NextResponse.json(
+          { error: "invalid_session_profile" },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  }
 
   if (!authContext) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
-  if (!authContext.portalUser) {
-    return NextResponse.json({ error: "user_not_provisioned" }, { status: 403 });
   }
 
   const { projectId } = await params;
