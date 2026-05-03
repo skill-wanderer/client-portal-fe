@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: client-portal-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: client_portal
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
