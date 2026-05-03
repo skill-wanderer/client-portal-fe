@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 interface ProjectListProps {
   projects: Array<{
     id: string;
@@ -51,15 +53,28 @@ export function ProjectList({ projects }: ProjectListProps) {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                    {project.name}
+                    <Link
+                      href={`/projects/${project.id}`}
+                      className="transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                    >
+                      {project.name}
+                    </Link>
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
                     {project.summary}
                   </p>
                 </div>
-                <span className="inline-flex w-fit rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                  {project.status.replaceAll("_", " ")}
-                </span>
+                <div className="flex flex-col items-start gap-3 lg:items-end">
+                  <span className="inline-flex w-fit rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+                    {project.status.replaceAll("_", " ")}
+                  </span>
+                  <Link
+                    href={`/projects/${project.id}`}
+                    className="text-sm font-medium text-zinc-700 transition-colors hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-100"
+                  >
+                    Open project
+                  </Link>
+                </div>
               </div>
 
               <dl className="mt-5 grid gap-3 text-sm text-zinc-500 dark:text-zinc-400 md:grid-cols-3">
