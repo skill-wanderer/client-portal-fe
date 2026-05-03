@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface TaskListProps {
   tasks: Array<{
@@ -25,8 +26,8 @@ function formatDueDate(value: string | null) {
 
 export function TaskList({ tasks }: TaskListProps) {
   return (
-    <section className="rounded-[1.75rem] border border-zinc-200/80 bg-white p-6 shadow-sm shadow-zinc-950/3 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex items-end justify-between gap-4">
+    <section className="ui-surface overflow-hidden rounded-[1.75rem] border border-zinc-200/80 bg-white p-5 shadow-sm shadow-zinc-950/3 sm:p-6 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
             Tasks
@@ -35,26 +36,28 @@ export function TaskList({ tasks }: TaskListProps) {
             Pending actions
           </h2>
         </div>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">{tasks.length} open item(s)</p>
+        <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">{tasks.length} open item(s)</p>
       </div>
 
       <div className="mt-6 space-y-4">
         {tasks.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-300 px-4 py-10 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-            You have no pending tasks right now.
-          </div>
+          <EmptyState
+            eyebrow="Tasks"
+            title="Nothing needs attention"
+            description="New client action items will show up here as soon as they are assigned to your account."
+          />
         ) : (
           tasks.map((task) => (
             <article
               key={task.id}
-              className="rounded-3xl border border-zinc-200/70 bg-zinc-50/70 p-5 dark:border-zinc-800 dark:bg-zinc-900/60"
+              className="overflow-hidden rounded-3xl border border-zinc-200/70 bg-zinc-50/70 p-5 transition-transform duration-200 hover:-translate-y-0.5 dark:border-zinc-800 dark:bg-zinc-900/60"
             >
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                <div className="min-w-0">
+                  <h3 className="break-words text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                     {task.title}
                   </h3>
-                  <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                  <p className="ui-line-clamp-3 mt-2 break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
                     {task.description}
                   </p>
                 </div>
@@ -68,17 +71,18 @@ export function TaskList({ tasks }: TaskListProps) {
                 </div>
               </div>
 
-              <dl className="mt-5 grid gap-3 text-sm text-zinc-500 dark:text-zinc-400 md:grid-cols-2">
+              <dl className="mt-5 grid gap-3 text-sm text-zinc-500 dark:text-zinc-400 sm:grid-cols-2">
                 <div>
                   <dt className="font-medium">Due date</dt>
                   <dd className="mt-1 text-zinc-900 dark:text-zinc-100">{formatDueDate(task.dueDate)}</dd>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <dt className="font-medium">Project reference</dt>
-                  <dd className="mt-1 break-all text-zinc-900 dark:text-zinc-100">
+                  <dd className="mt-1 text-zinc-900 dark:text-zinc-100">
                     <Link
                       href={`/projects/${task.projectId}`}
-                      className="transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                      className="block max-w-full truncate transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                      title={task.projectId}
                     >
                       {task.projectId}
                     </Link>

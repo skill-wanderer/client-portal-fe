@@ -36,7 +36,7 @@ export function DashboardSummary({ summary }: DashboardSummaryProps) {
       {summaryCards.map((card) => (
         <article
           key={card.key}
-          className={`min-h-41 rounded-[1.75rem] border border-zinc-200/80 bg-linear-to-br p-5 shadow-sm shadow-zinc-950/3 dark:border-zinc-800 dark:bg-zinc-950 ${card.accent}`}
+          className={`ui-surface min-h-41 overflow-hidden rounded-[1.75rem] border border-zinc-200/80 bg-linear-to-br p-5 shadow-sm shadow-zinc-950/3 transition-transform duration-200 hover:-translate-y-0.5 dark:border-zinc-800 dark:bg-zinc-950 ${card.accent}`}
         >
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
             {card.label}

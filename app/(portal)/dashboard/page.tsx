@@ -88,17 +88,24 @@ async function fetchDashboardData() {
 
 function ProvisioningErrorState() {
   return (
-    <Container className="py-8">
-      <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-950 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-700">
-          Dashboard unavailable
-        </p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-          Account not provisioned
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">
-          Your sign-in succeeded, but this portal account has not been mapped to an active client profile yet.
-        </p>
+    <Container className="py-6 sm:py-8">
+      <section className="ui-surface rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-700">
+              Dashboard unavailable
+            </p>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+              Account not provisioned
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">
+              Your sign-in succeeded, but this portal account has not been mapped to an active client profile yet. Ask an administrator to provision portal access for this email address.
+            </p>
+          </div>
+          <span className="self-start rounded-full border border-amber-300 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+            403
+          </span>
+        </div>
       </section>
     </Container>
   );
@@ -106,17 +113,24 @@ function ProvisioningErrorState() {
 
 function DashboardErrorState() {
   return (
-    <Container className="py-8">
-      <section className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-rose-950 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-rose-700">
-          Dashboard unavailable
-        </p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-          We could not load your dashboard
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-rose-900/80">
-          The live dashboard API did not return usable data for this request. Refresh the page after the service is available.
-        </p>
+    <Container className="py-6 sm:py-8">
+      <section className="ui-surface rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-rose-700">
+              Dashboard unavailable
+            </p>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+              We could not load your dashboard
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-rose-900/80">
+              The dashboard service returned an unusable response for this request. Refresh the page after the service is available.
+            </p>
+          </div>
+          <span className="self-start rounded-full border border-rose-300 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">
+            Fallback
+          </span>
+        </div>
       </section>
     </Container>
   );
@@ -152,20 +166,20 @@ export default async function DashboardPage() {
   }
 
   return (
-    <Container className="py-8">
+    <Container className="py-6 sm:py-8">
       <div className="space-y-8">
-        <section className="overflow-hidden rounded-4xl border border-zinc-200/80 bg-white shadow-sm shadow-zinc-950/3 dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="border-b border-zinc-200/80 bg-zinc-50/70 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <section className="ui-surface overflow-hidden rounded-4xl border border-zinc-200/80 bg-white shadow-sm shadow-zinc-950/3 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="border-b border-zinc-200/80 bg-zinc-50/70 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:px-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
               Client portal
             </p>
           </div>
-          <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)] lg:items-end">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl">
+          <div className="grid gap-6 px-5 py-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)] lg:items-end sm:px-6 sm:py-6">
+            <div className="min-w-0">
+              <h1 className="break-words text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl">
                 Welcome back, {dashboardData.user.displayName}
               </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              <p className="mt-4 max-w-2xl break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
                 Your live portal view keeps projects, tasks, messages, and recent files aligned in one place without leaving the protected session flow.
               </p>
             </div>
@@ -174,7 +188,7 @@ export default async function DashboardPage() {
                 <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
                   Email
                 </dt>
-                <dd className="mt-2 text-sm font-medium text-zinc-950 dark:text-zinc-100">
+                <dd className="mt-2 truncate text-sm font-medium text-zinc-950 dark:text-zinc-100" title={dashboardData.user.email}>
                   {dashboardData.user.email}
                 </dd>
               </div>
@@ -182,7 +196,10 @@ export default async function DashboardPage() {
                 <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
                   Company
                 </dt>
-                <dd className="mt-2 text-sm font-medium text-zinc-950 dark:text-zinc-100">
+                <dd
+                  className="mt-2 truncate text-sm font-medium text-zinc-950 dark:text-zinc-100"
+                  title={dashboardData.user.companyName ?? "Not available"}
+                >
                   {dashboardData.user.companyName ?? "Not available"}
                 </dd>
               </div>
