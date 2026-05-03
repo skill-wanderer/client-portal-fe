@@ -1738,3 +1738,21 @@ Step 1.3 COMPLETE.
 All P0 and P1 auth-system gaps scheduled for Step 1.3 are closed,
 and the full auth validation suite passes with deterministic evidence.
 ```
+
+## Session Store Limitation
+
+Current implementation:
+
+- File-based session store
+- Stored in OS tmp directory
+
+Characteristics:
+
+- Persistent across restart (single node)
+- NOT shared across instances
+- NOT horizontally scalable
+
+Production implication:
+
+- Suitable for single-instance deployment
+- Requires Redis or distributed store for scaling
