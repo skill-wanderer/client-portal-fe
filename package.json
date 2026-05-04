@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "dev:https": "node server.js",
+    "dev:https": "set \"NODE_EXTRA_CA_CERTS=%LOCALAPPDATA%\\mkcert\\rootCA.pem\" && node server.js",
     "test": "jest",
     "test:auth": "jest tests/auth --runInBand --coverage",
     "prepare": "husky"

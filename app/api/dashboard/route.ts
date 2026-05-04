@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentPortalAuthContext } from "@/lib/auth/portal-user";
+import { getAuthContext } from "@/lib/auth/get-auth-context";
+import { requireRole } from "@/lib/auth/rbac";
 import { query } from "@/lib/db";
+import { withObservability } from "@/lib/observability/with-observability";
 
 interface DashboardProjectRow {
   id: string;
@@ -33,11 +35,11 @@ interface RecentFileRow {
   created_at: string | Date;
 }
 
-export async function GET() {
+async function handleGet() {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -66,7 +68,9 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const userId = authContext.portalUser.id;
+  requireRole(authContext.user, ["client"]);
+
+  const userId = authContext.userId;
 
   const [projectsResult, tasksResult, unreadMessagesResult, recentFilesResult] =
     await Promise.all([
@@ -132,7 +136,7 @@ export async function GET() {
     ]);
 
   return NextResponse.json({
-    user: authContext.portalUser,
+    user: authContext.user,
     summary: {
       activeProjects: projectsResult.rows.length,
       pendingActions: tasksResult.rows.length,
@@ -165,3 +169,8 @@ export async function GET() {
     })),
   });
 }
+
+export const GET = withObservability(handleGet, {
+  method: "GET",
+  route: "/api/dashboard",
+});

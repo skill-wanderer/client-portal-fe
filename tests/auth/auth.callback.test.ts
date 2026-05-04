@@ -3,14 +3,17 @@
  * Validates CSRF state validation, code exchange, session creation, and redirects.
  */
 
-import { GET } from "@/app/api/auth/callback/route";
 import { NextRequest } from "next/server";
-import { sessionStore } from "@/lib/auth/session";
 
 // Mock next/headers cookies()
 const mockCookieStore = {
   get: jest.fn(),
   set: jest.fn(),
+  delete: jest.fn(),
+};
+const mockSessionStore = {
+  set: jest.fn(),
+  get: jest.fn(),
   delete: jest.fn(),
 };
 jest.mock("next/headers", () => ({
@@ -35,18 +38,16 @@ jest.mock("@/lib/auth/keycloak", () => ({
 }));
 
 // Mock session store
-jest.mock("@/lib/auth/session", () => ({
-  sessionStore: {
-    set: jest.fn(),
-    get: jest.fn(),
-    delete: jest.fn(),
-  },
+jest.mock("@/lib/auth/session-factory", () => ({
+  createSessionStore: jest.fn(() => mockSessionStore),
 }));
 
 // Mock crypto for deterministic UUIDs
 jest.mock("node:crypto", () => ({
   randomUUID: jest.fn(() => "deterministic-uuid-1234"),
 }));
+
+import { GET } from "@/app/api/auth/callback/route";
 
 function createCallbackRequest(params: Record<string, string>): NextRequest {
   const url = new URL("/api/auth/callback", "http://localhost:3000");
@@ -160,7 +161,7 @@ describe("GET /api/auth/callback", () => {
     const response = await GET(request);
 
     // Session should be created
-    expect(sessionStore.set).toHaveBeenCalledWith(
+    expect(mockSessionStore.set).toHaveBeenCalledWith(
       "deterministic-uuid-1234",
       expect.objectContaining({
         accessToken: "at-new",

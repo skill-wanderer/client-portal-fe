@@ -1,7 +1,10 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { getLogoutUrl } from "@/lib/auth/keycloak";
-import { sessionStore } from "@/lib/auth/session";
+import { createSessionStore } from "@/lib/auth/session-factory";
+import { withObservability } from "@/lib/observability/with-observability";
+
+const sessionStore = createSessionStore();
 
 /**
  * POST /api/auth/logout
@@ -9,7 +12,7 @@ import { sessionStore } from "@/lib/auth/session";
  * Destroys server-side session, clears cookie,
  * redirects to Keycloak logout endpoint.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   const cookieStore = await cookies();
   const sessionId = cookieStore.get("__session")?.value;
 
@@ -30,3 +33,8 @@ export async function POST(request: NextRequest) {
   const redirectUrl = logoutRedirectUrl ?? "/login";
   return NextResponse.redirect(new URL(redirectUrl, request.url));
 }
+
+export const POST = withObservability(handlePost, {
+  method: "POST",
+  route: "/api/auth/logout",
+});

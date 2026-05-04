@@ -1,10 +1,13 @@
 // app/api/auth/session-init/route.ts
 import { NextRequest, NextResponse } from "next/server"
 import { getRemainingSessionMaxAge, getSessionCookieOptions } from "@/lib/auth/config"
-import { sessionStore } from "@/lib/auth/session"
+import { createSessionStore } from "@/lib/auth/session-factory"
 import { env } from "@/lib/env"
+import { withObservability } from "@/lib/observability/with-observability"
 
-export async function GET(req: NextRequest) {
+const sessionStore = createSessionStore()
+
+async function handleGet(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sid")
 
   if (!sessionId) {
@@ -27,3 +30,8 @@ export async function GET(req: NextRequest) {
 
   return response
 }
+
+export const GET = withObservability(handleGet, {
+  method: "GET",
+  route: "/api/auth/session-init",
+})

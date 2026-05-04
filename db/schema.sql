@@ -55,8 +55,19 @@ CREATE TABLE IF NOT EXISTS files (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_projects_client_id ON projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user_id ON tasks(assigned_user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id);
 CREATE INDEX IF NOT EXISTS idx_files_project_id ON files(project_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);

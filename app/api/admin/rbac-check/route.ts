@@ -1,18 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth/get-auth-context";
 import { requireRole } from "@/lib/auth/rbac";
-import { query } from "@/lib/db";
 import { withObservability } from "@/lib/observability/with-observability";
-
-interface ProjectListRow {
-  id: string;
-  name: string;
-  summary: string;
-  status: string;
-  start_date: string | null;
-  target_date: string | null;
-  last_updated_at: string | Date;
-}
 
 async function handleGet() {
   let authContext;
@@ -47,39 +36,12 @@ async function handleGet() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  requireRole(authContext.user, ["client"]);
+  requireRole(authContext.user, ["admin"]);
 
-  const projectsResult = await query<ProjectListRow>(
-    `
-      SELECT
-        id,
-        name,
-        summary,
-        status,
-        start_date,
-        target_date,
-        last_updated_at
-      FROM projects
-      WHERE client_id = $1
-      ORDER BY last_updated_at DESC
-    `,
-    [authContext.userId]
-  );
-
-  return NextResponse.json({
-    projects: projectsResult.rows.map((project) => ({
-      id: project.id,
-      name: project.name,
-      summary: project.summary,
-      status: project.status,
-      startDate: project.start_date,
-      targetDate: project.target_date,
-      lastUpdatedAt: new Date(project.last_updated_at).toISOString(),
-    })),
-  });
+  return NextResponse.json({ status: "ok" });
 }
 
 export const GET = withObservability(handleGet, {
   method: "GET",
-  route: "/api/projects",
+  route: "/api/admin/rbac-check",
 });

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { getCurrentPortalAuthContext } from "@/lib/auth/portal-user";
+import { logAudit } from "@/lib/audit/audit";
+import { getAuthContext } from "@/lib/auth/get-auth-context";
+import { requireRole } from "@/lib/auth/rbac";
 import { query } from "@/lib/db";
+import { withObservability } from "@/lib/observability/with-observability";
 
 interface CompletedTaskRow {
   id: string;
@@ -13,14 +16,14 @@ interface CompletedTaskRow {
   completed_at: string | Date | null;
 }
 
-export async function POST(
+async function handlePost(
   _request: Request,
   { params }: { params: Promise<{ taskId: string }> }
 ) {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -49,6 +52,8 @@ export async function POST(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  requireRole(authContext.user, ["client"]);
+
   const { taskId } = await params;
 
   const taskResult = await query<CompletedTaskRow>(
@@ -72,7 +77,7 @@ export async function POST(
         t.due_date,
         t.completed_at
     `,
-    [taskId, authContext.portalUser.id]
+    [taskId, authContext.userId]
   );
 
   if (!taskResult.rowCount) {
@@ -80,6 +85,16 @@ export async function POST(
   }
 
   const task = taskResult.rows[0];
+
+  logAudit({
+    userId: authContext.userId,
+    action: "task.complete",
+    resource: "task",
+    metadata: {
+      taskId: task.id,
+      projectId: task.project_id,
+    },
+  });
 
   return NextResponse.json({
     task: {
@@ -96,3 +111,8 @@ export async function POST(
     },
   });
 }
+
+export const POST = withObservability(handlePost, {
+  method: "POST",
+  route: "/api/tasks/[taskId]/complete",
+});
