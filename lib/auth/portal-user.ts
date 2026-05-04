@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import type { Session } from "@/types";
 import { query } from "@/lib/db";
-import { sessionStore } from "@/lib/auth/session";
+import { createSessionStore } from "@/lib/auth/session-factory";
+
+const sessionStore = createSessionStore();
 
 interface PortalUserRow {
   id: string;

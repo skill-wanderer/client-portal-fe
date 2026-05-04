@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { getCurrentPortalAuthContext } from "@/lib/auth/portal-user";
+import { logAudit } from "@/lib/audit/audit";
+import { getAuthContext } from "@/lib/auth/get-auth-context";
+import { requireRole } from "@/lib/auth/rbac";
 import { query } from "@/lib/db";
+import { withObservability } from "@/lib/observability/with-observability";
 
 interface ProjectOwnershipRow {
   id: string;
@@ -14,14 +17,14 @@ interface ProjectMessageRow {
   read_at: string | Date | null;
 }
 
-export async function GET(
+async function handleGet(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -50,6 +53,8 @@ export async function GET(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  requireRole(authContext.user, ["client"]);
+
   const { projectId } = await params;
 
   const projectResult = await query<ProjectOwnershipRow>(
@@ -60,7 +65,7 @@ export async function GET(
         AND client_id = $2
       LIMIT 1
     `,
-    [projectId, authContext.portalUser.id]
+    [projectId, authContext.userId]
   );
 
   if (!projectResult.rowCount) {
@@ -93,14 +98,14 @@ export async function GET(
   });
 }
 
-export async function POST(
+async function handlePost(
   request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -128,6 +133,8 @@ export async function POST(
   if (!authContext) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  requireRole(authContext.user, ["client"]);
 
   let payload: unknown;
 
@@ -159,7 +166,7 @@ export async function POST(
         AND client_id = $2
       LIMIT 1
     `,
-    [projectId, authContext.portalUser.id]
+    [projectId, authContext.userId]
   );
 
   if (!projectResult.rowCount) {
@@ -181,10 +188,20 @@ export async function POST(
         created_at,
         read_at
     `,
-    [projectId, authContext.portalUser.id, messageBody]
+    [projectId, authContext.userId, messageBody]
   );
 
   const message = insertResult.rows[0];
+
+  logAudit({
+    userId: authContext.userId,
+    action: "message.send",
+    resource: "message",
+    metadata: {
+      projectId,
+      messageId: message.id,
+    },
+  });
 
   return NextResponse.json(
     {
@@ -199,3 +216,13 @@ export async function POST(
     { status: 201 }
   );
 }
+
+export const GET = withObservability(handleGet, {
+  method: "GET",
+  route: "/api/projects/[projectId]/messages",
+});
+
+export const POST = withObservability(handlePost, {
+  method: "POST",
+  route: "/api/projects/[projectId]/messages",
+});

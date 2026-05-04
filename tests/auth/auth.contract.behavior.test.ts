@@ -21,18 +21,19 @@ jest.mock("@/lib/env", () => ({
   },
 }));
 
-jest.mock("@/lib/auth/session", () => ({
-  sessionStore: {
-    get: jest.fn(),
-    set: jest.fn(),
-    delete: jest.fn(),
-  },
+const mockSessionStore = {
+  get: jest.fn(),
+  set: jest.fn(),
+  delete: jest.fn(),
+};
+
+jest.mock("@/lib/auth/session-factory", () => ({
+  createSessionStore: jest.fn(() => mockSessionStore),
 }));
 
 import { GET as sessionInitHandler } from "@/app/api/auth/session-init/route";
-import { sessionStore } from "@/lib/auth/session";
 
-const mockedSessionStore = sessionStore as jest.Mocked<typeof sessionStore>;
+const mockedSessionStore = mockSessionStore;
 
 const validSession = {
   accessToken: "access-token",

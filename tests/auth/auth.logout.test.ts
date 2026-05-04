@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server";
-import { POST } from "@/app/api/auth/logout/route";
 
 const mockCookieStore = {
   get: jest.fn(),
+  delete: jest.fn(),
+};
+const mockSessionStore = {
+  get: jest.fn(),
+  set: jest.fn(),
   delete: jest.fn(),
 };
 
@@ -14,12 +18,11 @@ jest.mock("@/lib/auth/keycloak", () => ({
   getLogoutUrl: jest.fn(),
 }));
 
-jest.mock("@/lib/auth/session", () => ({
-  sessionStore: {
-    get: jest.fn(),
-    delete: jest.fn(),
-  },
+jest.mock("@/lib/auth/session-factory", () => ({
+  createSessionStore: jest.fn(() => mockSessionStore),
 }));
+
+import { POST } from "@/app/api/auth/logout/route";
 
 describe("POST /api/auth/logout", () => {
   beforeEach(() => {

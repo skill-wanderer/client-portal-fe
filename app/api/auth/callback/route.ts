@@ -4,8 +4,11 @@ import { type NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getSessionCookieOptions } from "@/lib/auth/config";
 import { decodeIdToken, exchangeCode, extractUser } from "@/lib/auth/keycloak";
-import { sessionStore } from "@/lib/auth/session";
+import { createSessionStore } from "@/lib/auth/session-factory";
 import { env } from "@/lib/env";
+import { withObservability } from "@/lib/observability/with-observability";
+
+const sessionStore = createSessionStore();
 
 /**
  * GET /api/auth/callback
@@ -14,7 +17,7 @@ import { env } from "@/lib/env";
  * Validates CSRF state, exchanges code for tokens,
  * creates server-side session, sets session cookie.
  */
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
   const state = searchParams.get("state");
@@ -77,3 +80,8 @@ export async function GET(request: NextRequest) {
 
   return response;
 }
+
+export const GET = withObservability(handleGet, {
+  method: "GET",
+  route: "/api/auth/callback",
+});

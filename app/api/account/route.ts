@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentPortalAuthContext } from "@/lib/auth/portal-user";
+import { getAuthContext } from "@/lib/auth/get-auth-context";
+import { requireRole } from "@/lib/auth/rbac";
 import { query } from "@/lib/db";
+import { withObservability } from "@/lib/observability/with-observability";
 
 interface AccountUserRow {
   id: string;
@@ -13,11 +15,11 @@ interface AccountUserRow {
   updated_at: string | Date;
 }
 
-export async function GET() {
+async function handleGet() {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -46,14 +48,16 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({ user: authContext.portalUser });
+  requireRole(authContext.user, ["client"]);
+
+  return NextResponse.json({ user: authContext.user });
 }
 
-export async function PATCH(request: Request) {
+async function handlePatch(request: Request) {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -81,6 +85,8 @@ export async function PATCH(request: Request) {
   if (!authContext) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  requireRole(authContext.user, ["client"]);
 
   let payload: unknown;
 
@@ -120,7 +126,7 @@ export async function PATCH(request: Request) {
         created_at,
         updated_at
     `,
-    [authContext.portalUser.id, displayName]
+    [authContext.userId, displayName]
   );
 
   if (!userResult.rowCount) {
@@ -142,3 +148,13 @@ export async function PATCH(request: Request) {
     },
   });
 }
+
+export const GET = withObservability(handleGet, {
+  method: "GET",
+  route: "/api/account",
+});
+
+export const PATCH = withObservability(handlePatch, {
+  method: "PATCH",
+  route: "/api/account",
+});

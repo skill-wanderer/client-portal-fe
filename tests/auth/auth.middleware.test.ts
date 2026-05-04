@@ -5,13 +5,15 @@
 
 import { createTestRequest } from "../testServer";
 
+const mockSessionStore = {
+  get: jest.fn(),
+  set: jest.fn(),
+  delete: jest.fn(),
+};
+
 // Mock session store
-jest.mock("@/lib/auth/session", () => ({
-  sessionStore: {
-    get: jest.fn(),
-    set: jest.fn(),
-    delete: jest.fn(),
-  },
+jest.mock("@/lib/auth/session-factory", () => ({
+  createSessionStore: jest.fn(() => mockSessionStore),
 }));
 
 const mockRefreshAccessToken = jest.fn();
@@ -20,9 +22,8 @@ jest.mock("@/lib/auth/keycloak", () => ({
 }));
 
 import { proxy } from "@/proxy";
-import { sessionStore } from "@/lib/auth/session";
 
-const mockedSessionStore = sessionStore as jest.Mocked<typeof sessionStore>;
+const mockedSessionStore = mockSessionStore;
 
 describe("Auth Middleware", () => {
   beforeEach(() => {

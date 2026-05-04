@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { getCurrentPortalAuthContext } from "@/lib/auth/portal-user";
+import { logAudit } from "@/lib/audit/audit";
+import { getAuthContext } from "@/lib/auth/get-auth-context";
+import { requireRole } from "@/lib/auth/rbac";
 import { query } from "@/lib/db";
+import { withObservability } from "@/lib/observability/with-observability";
 
 interface ProjectOwnershipRow {
   id: string;
@@ -17,14 +20,14 @@ interface ProjectFileRow {
   created_at: string | Date;
 }
 
-export async function GET(
+async function handleGet(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   let authContext;
 
   try {
-    authContext = await getCurrentPortalAuthContext();
+    authContext = await getAuthContext();
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "portal_user_not_found") {
@@ -53,6 +56,8 @@ export async function GET(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  requireRole(authContext.user, ["client"]);
+
   const { projectId } = await params;
 
   const projectResult = await query<ProjectOwnershipRow>(
@@ -63,7 +68,7 @@ export async function GET(
         AND client_id = $2
       LIMIT 1
     `,
-    [projectId, authContext.portalUser.id]
+    [projectId, authContext.userId]
   );
 
   if (!projectResult.rowCount) {
@@ -88,6 +93,16 @@ export async function GET(
     [projectId]
   );
 
+  logAudit({
+    userId: authContext.userId,
+    action: "file.access",
+    resource: "file",
+    metadata: {
+      projectId,
+      fileCount: filesResult.rows.length,
+    },
+  });
+
   return NextResponse.json({
     files: filesResult.rows.map((file) => ({
       id: file.id,
@@ -101,3 +116,8 @@ export async function GET(
     })),
   });
 }
+
+export const GET = withObservability(handleGet, {
+  method: "GET",
+  route: "/api/projects/[projectId]/files",
+});
