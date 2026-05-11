@@ -1,94 +1,40 @@
+"use client";
+
 import Link from "next/link";
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { ProjectDetailClient } from "@/components/project-detail/project-detail-client";
+import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
-import { env } from "@/lib/env";
+import { ApiClientError } from "@/lib/api-client";
+import {
+  getProjectPageData,
+  type ProjectPageData,
+} from "@/lib/portal-api";
 
-interface ProjectDetail {
-  id: string;
-  name: string;
-  summary: string;
-  status: string;
-  startDate: string | null;
-  targetDate: string | null;
-  lastUpdatedAt: string;
-}
+type ProjectViewState =
+  | "loading"
+  | "ready"
+  | "provisioning"
+  | "not-found"
+  | "error";
 
-interface ProjectTask {
-  id: string;
-  assignedUserId: string;
-  title: string;
-  description: string;
-  status: string;
-  dueDate: string | null;
-  completedAt: string | null;
-}
-
-interface ProjectMessage {
-  id: string;
-  authorUserId: string;
-  body: string;
-  createdAt: string;
-  readAt: string | null;
-}
-
-interface ProjectFile {
-  id: string;
-  uploadedByUserId: string;
-  fileName: string;
-  storageKey: string;
-  mimeType: string;
-  sizeBytes: number;
-  category: string;
-  createdAt: string;
-}
-
-interface ProjectDetailResponse {
-  project: ProjectDetail;
-  tasks: ProjectTask[];
-  messages: ProjectMessage[];
-}
-
-interface ProjectFilesResponse {
-  files: ProjectFile[];
-}
-
-function getRequestOrigin(host: string | null, protocol: string | null) {
-  if (!host) {
-    return env.appUrl;
-  }
-
-  const resolvedProtocol =
-    protocol ??
-    (host.startsWith("localhost") || host.startsWith("127.0.0.1")
-      ? "http"
-      : new URL(env.appUrl).protocol.replace(":", ""));
-
-  return `${resolvedProtocol}://${host}`;
-}
-
-async function fetchProjectResources(projectId: string) {
-  const headerStore = await headers();
-  const cookieStore = await cookies();
-  const origin = getRequestOrigin(
-    headerStore.get("x-forwarded-host") ?? headerStore.get("host"),
-    headerStore.get("x-forwarded-proto")
+function ProjectLoadingState() {
+  return (
+    <Container className="py-6 sm:py-8">
+      <section className="ui-surface rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:p-6">
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+          Project loading
+        </p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+          Fetching project details
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          The frontend is loading project data directly from the backend client API.
+        </p>
+      </section>
+    </Container>
   );
-  const requestHeaders = {
-    cookie: cookieStore.toString(),
-  };
-
-  return Promise.all([
-    fetch(`${origin}/api/projects/${projectId}`, {
-      cache: "no-store",
-      headers: requestHeaders,
-    }),
-    fetch(`${origin}/api/projects/${projectId}/files`, {
-      cache: "no-store",
-      headers: requestHeaders,
-    }),
-  ]);
 }
 
 function ProvisioningErrorState() {
@@ -147,7 +93,7 @@ function ProjectNotFoundState() {
   );
 }
 
-function ProjectErrorState() {
+function ProjectErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <Container className="py-6 sm:py-8">
       <section className="ui-surface rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
@@ -173,60 +119,90 @@ function ProjectErrorState() {
             Fallback
           </span>
         </div>
+        <div className="mt-6">
+          <Button type="button" onClick={onRetry}>
+            Retry project
+          </Button>
+        </div>
       </section>
     </Container>
   );
 }
 
-export default async function ProjectDetailPage({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}) {
-  const { projectId } = await params;
+export default function ProjectDetailPage() {
+  const params = useParams<{ projectId: string | string[] }>();
+  const rawProjectId = params.projectId;
+  const projectId = Array.isArray(rawProjectId) ? rawProjectId[0] : rawProjectId;
+  const [projectData, setProjectData] = useState<ProjectPageData | null>(null);
+  const [viewState, setViewState] = useState<ProjectViewState>("loading");
 
-  let projectResponse: Response;
-  let filesResponse: Response;
+  const loadProject = useCallback(async () => {
+    if (!projectId) {
+      setViewState("error");
+      return;
+    }
 
-  try {
-    [projectResponse, filesResponse] = await fetchProjectResources(projectId);
-  } catch {
-    return <ProjectErrorState />;
+    try {
+      const response = await getProjectPageData(projectId);
+      setProjectData(response);
+      setViewState("ready");
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        if (error.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+
+        if (error.status === 403) {
+          setViewState("provisioning");
+          return;
+        }
+
+        if (error.status === 404) {
+          setViewState("not-found");
+          return;
+        }
+      }
+
+      setViewState("error");
+    }
+  }, [projectId]);
+
+  function handleRetry() {
+    setViewState("loading");
+    void loadProject();
   }
 
-  if (projectResponse.status === 401) {
-    redirect("/login");
+  useEffect(() => {
+    // The project view must start its authenticated backend fetch in the browser because the FE host never receives the API cookie.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadProject();
+  }, [loadProject]);
+
+  if (viewState === "loading" && !projectData) {
+    return <ProjectLoadingState />;
   }
 
-  if (projectResponse.status === 403) {
+  if (viewState === "provisioning") {
     return <ProvisioningErrorState />;
   }
 
-  if (projectResponse.status === 404) {
+  if (viewState === "not-found") {
     return <ProjectNotFoundState />;
   }
 
-  if (!projectResponse.ok || !filesResponse.ok) {
-    return <ProjectErrorState />;
-  }
-
-  let projectData: ProjectDetailResponse;
-  let filesData: ProjectFilesResponse;
-
-  try {
-    projectData = (await projectResponse.json()) as ProjectDetailResponse;
-    filesData = (await filesResponse.json()) as ProjectFilesResponse;
-  } catch {
-    return <ProjectErrorState />;
+  if (viewState === "error" || !projectData || !projectId) {
+    return <ProjectErrorState onRetry={handleRetry} />;
   }
 
   return (
     <Container className="py-6 sm:py-8">
       <ProjectDetailClient
+        key={projectId}
         project={projectData.project}
         tasks={projectData.tasks}
         messages={projectData.messages}
-        files={filesData.files}
+        files={projectData.files}
       />
     </Container>
   );

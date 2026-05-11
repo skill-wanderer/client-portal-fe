@@ -1,5 +1,6 @@
-// app/(portal)/layout.tsx
+"use client";
 
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Navigation } from "@/components/navigation";
 
 export default function PortalLayout({
@@ -8,9 +9,11 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <Navigation />
-      <main className="flex flex-1 flex-col">{children}</main>
-    </div>
+    <ProtectedRoute>
+      <div className="flex min-h-full flex-1 flex-col">
+        <Navigation />
+        <main className="flex flex-1 flex-col">{children}</main>
+      </div>
+    </ProtectedRoute>
   );
 }

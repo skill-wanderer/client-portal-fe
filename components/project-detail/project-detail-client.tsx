@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { startTransition, useState, useTransition } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ApiClientError } from "@/lib/api-client";
+import {
+  completeProjectTask,
+  sendProjectMessage,
+} from "@/lib/portal-api";
 
 interface ProjectDetailClientProps {
   project: {
@@ -128,58 +132,57 @@ export function ProjectDetailClient({
   messages,
   files,
 }: ProjectDetailClientProps) {
-  const router = useRouter();
+  const [taskItems, setTaskItems] = useState(tasks);
+  const [messageItems, setMessageItems] = useState(messages);
   const [taskError, setTaskError] = useState<string | null>(null);
   const [taskFeedback, setTaskFeedback] = useState<string | null>(null);
   const [messageBody, setMessageBody] = useState("");
   const [messageError, setMessageError] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [isMessageSubmitting, setIsMessageSubmitting] = useState(false);
-  const [isRefreshing, startRefreshTransition] = useTransition();
 
   async function handleCompleteTask(taskId: string) {
     setActiveTaskId(taskId);
     setTaskError(null);
     setTaskFeedback(null);
 
-    const response = await fetch(`/api/tasks/${taskId}/complete`, {
-      method: "POST",
-    });
+    try {
+      const response = await completeProjectTask(taskId);
+      const completedTask = taskItems.find((task) => task.id === taskId);
 
-    if (response.status === 401) {
-      router.push("/login");
-      return;
-    }
-
-    if (!response.ok) {
+      setTaskItems((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === response.task.id ? response.task : task
+        )
+      );
+      setTaskFeedback(
+        completedTask
+          ? `Marked "${completedTask.title}" complete.`
+          : "Marked the task complete."
+      );
+      setActiveTaskId(null);
+    } catch (error) {
       setActiveTaskId(null);
 
-      if (response.status === 404) {
-        setTaskError("This task is no longer available for your account.");
-        return;
-      }
+      if (error instanceof ApiClientError) {
+        if (error.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
 
-      if (response.status === 403) {
-        setTaskError("Your account is not provisioned for this project.");
-        return;
+        if (error.status === 404) {
+          setTaskError("This task is no longer available for your account.");
+          return;
+        }
+
+        if (error.status === 403) {
+          setTaskError("Your account is not provisioned for this project.");
+          return;
+        }
       }
 
       setTaskError("We could not complete the task. Try again.");
-      return;
     }
-
-    const completedTask = tasks.find((task) => task.id === taskId);
-
-    setTaskFeedback(
-      completedTask
-        ? `Marked \"${completedTask.title}\" complete. Syncing the latest project data.`
-        : "Marked the task complete. Syncing the latest project data."
-    );
-    setActiveTaskId(null);
-
-    startRefreshTransition(() => {
-      router.refresh();
-    });
   }
 
   async function handleSendMessage(event: React.FormEvent<HTMLFormElement>) {
@@ -195,46 +198,39 @@ export function ProjectDetailClient({
 
     setIsMessageSubmitting(true);
 
-    const response = await fetch(`/api/projects/${project.id}/messages`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ body: trimmedBody }),
-    });
+    try {
+      const response = await sendProjectMessage(project.id, trimmedBody);
 
-    if (response.status === 401) {
-      router.push("/login");
-      return;
-    }
-
-    if (!response.ok) {
+      setMessageItems((currentMessages) => [...currentMessages, response.message]);
+      setMessageBody("");
+      setIsMessageSubmitting(false);
+    } catch (error) {
       setIsMessageSubmitting(false);
 
-      if (response.status === 403) {
-        setMessageError("Your account is not provisioned for this project.");
-        return;
-      }
+      if (error instanceof ApiClientError) {
+        if (error.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
 
-      if (response.status === 404) {
-        setMessageError("This project is no longer available for your account.");
-        return;
-      }
+        if (error.status === 403) {
+          setMessageError("Your account is not provisioned for this project.");
+          return;
+        }
 
-      if (response.status === 400) {
-        setMessageError("Enter a valid message before sending.");
-        return;
+        if (error.status === 404) {
+          setMessageError("This project is no longer available for your account.");
+          return;
+        }
+
+        if (error.status === 400) {
+          setMessageError("Enter a valid message before sending.");
+          return;
+        }
       }
 
       setMessageError("We could not send your message. Try again.");
-      return;
     }
-
-    setMessageBody("");
-    setIsMessageSubmitting(false);
-    startTransition(() => {
-      router.refresh();
-    });
   }
 
   return (
@@ -317,7 +313,7 @@ export function ProjectDetailClient({
                   Project tasks
                 </h2>
               </div>
-              <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">{tasks.length} item(s)</p>
+              <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">{taskItems.length} item(s)</p>
             </div>
 
             {taskError ? (
@@ -339,14 +335,14 @@ export function ProjectDetailClient({
             ) : null}
 
             <div className="mt-6 space-y-4">
-              {tasks.length === 0 ? (
+              {taskItems.length === 0 ? (
                 <EmptyState
                   eyebrow="Tasks"
                   title="No project tasks yet"
                   description="Assigned action items for this project will appear here as soon as they are created."
                 />
               ) : (
-                tasks.map((task) => {
+                taskItems.map((task) => {
                   const isTaskDone = task.status === "done";
                   const isTaskBusy = activeTaskId === task.id;
 
@@ -381,16 +377,12 @@ export function ProjectDetailClient({
                             <Button
                               type="button"
                               variant="secondary"
-                              disabled={Boolean(activeTaskId) || isRefreshing}
+                              disabled={Boolean(activeTaskId)}
                               aria-busy={isTaskBusy}
                               className="min-w-40"
                               onClick={() => void handleCompleteTask(task.id)}
                             >
-                              {isTaskBusy ? (
-                                <LoadingIndicator label={isRefreshing ? "Syncing..." : "Completing..."} />
-                              ) : (
-                                "Complete task"
-                              )}
+                              {isTaskBusy ? <LoadingIndicator label="Completing..." /> : "Complete task"}
                             </Button>
                           )}
                         </div>
@@ -429,7 +421,7 @@ export function ProjectDetailClient({
                   Project conversation
                 </h2>
               </div>
-              <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">{messages.length} message(s)</p>
+              <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">{messageItems.length} message(s)</p>
             </div>
 
             <form className="mt-6 space-y-4" onSubmit={handleSendMessage}>
@@ -439,7 +431,7 @@ export function ProjectDetailClient({
                   className="mt-2 min-h-28 w-full max-w-full resize-y rounded-2xl border border-zinc-300 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-100"
                   value={messageBody}
                   onChange={(event) => setMessageBody(event.target.value)}
-                  placeholder="Write a project update that will be posted through the live message API."
+                  placeholder="Write a project update that will be posted through the backend message API."
                 />
               </label>
 
@@ -455,31 +447,27 @@ export function ProjectDetailClient({
               <div className="flex justify-stretch sm:justify-end">
                 <Button
                   type="submit"
-                  disabled={isMessageSubmitting || isRefreshing}
-                  aria-busy={isMessageSubmitting || isRefreshing}
+                  disabled={isMessageSubmitting}
+                  aria-busy={isMessageSubmitting}
                   className="w-full sm:w-auto sm:min-w-40"
                 >
-                  {isMessageSubmitting || isRefreshing ? (
-                    <LoadingIndicator label={isMessageSubmitting ? "Sending..." : "Refreshing..."} />
-                  ) : (
-                    "Send message"
-                  )}
+                  {isMessageSubmitting ? <LoadingIndicator label="Sending..." /> : "Send message"}
                 </Button>
               </div>
             </form>
 
             <div className="mt-8 space-y-4">
-              {messages.length === 0 ? (
+              {messageItems.length === 0 ? (
                 <EmptyState
                   eyebrow="Messages"
                   title="No messages yet"
                   description="Project updates sent through the live conversation feed will appear here in order."
                 />
               ) : (
-                messages.map((message, index) => {
+                messageItems.map((message, index) => {
                   const startsNewGroup =
                     index === 0 ||
-                    messages[index - 1]?.authorUserId !== message.authorUserId;
+                    messageItems[index - 1]?.authorUserId !== message.authorUserId;
 
                   return (
                     <div

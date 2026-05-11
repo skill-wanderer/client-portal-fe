@@ -1,89 +1,34 @@
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import { DashboardSummary } from "@/components/dashboard/dashboard-summary";
 import { FileList } from "@/components/dashboard/file-list";
 import { ProjectList } from "@/components/dashboard/project-list";
 import { TaskList } from "@/components/dashboard/task-list";
+import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
-import { env } from "@/lib/env";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiClientError } from "@/lib/api-client";
+import { type DashboardData, getDashboardData } from "@/lib/portal-api";
 
-interface DashboardUser {
-  id: string;
-  role: string;
-  displayName: string;
-  email: string;
-  companyName: string | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
+type DashboardViewState = "loading" | "ready" | "provisioning" | "error";
 
-interface DashboardSummaryData {
-  activeProjects: number;
-  pendingActions: number;
-  unreadMessages: number;
-  recentFiles: number;
-}
-
-interface DashboardProject {
-  id: string;
-  name: string;
-  summary: string;
-  status: string;
-  startDate: string | null;
-  targetDate: string | null;
-  lastUpdatedAt: string;
-}
-
-interface DashboardTask {
-  id: string;
-  projectId: string;
-  title: string;
-  description: string;
-  status: string;
-  dueDate: string | null;
-}
-
-interface DashboardFile {
-  id: string;
-  projectId: string;
-  fileName: string;
-  category: string;
-  createdAt: string;
-}
-
-interface DashboardResponse {
-  user: DashboardUser;
-  summary: DashboardSummaryData;
-  projects: DashboardProject[];
-  tasks: DashboardTask[];
-  files: DashboardFile[];
-}
-
-function getDashboardOrigin(host: string | null, protocol: string | null) {
-  if (!host) {
-    return env.appUrl;
-  }
-
-  const resolvedProtocol = protocol ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : new URL(env.appUrl).protocol.replace(":", ""));
-
-  return `${resolvedProtocol}://${host}`;
-}
-
-async function fetchDashboardData() {
-  const headerStore = await headers();
-  const cookieStore = await cookies();
-  const origin = getDashboardOrigin(
-    headerStore.get("x-forwarded-host") ?? headerStore.get("host"),
-    headerStore.get("x-forwarded-proto")
+function DashboardLoadingState() {
+  return (
+    <Container className="py-6 sm:py-8">
+      <section className="ui-surface rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:p-6">
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+          Dashboard loading
+        </p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+          Fetching your live portal data
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          The frontend is loading the authenticated dashboard directly from the backend API.
+        </p>
+      </section>
+    </Container>
   );
-
-  return fetch(`${origin}/api/dashboard`, {
-    cache: "no-store",
-    headers: {
-      cookie: cookieStore.toString(),
-    },
-  });
 }
 
 function ProvisioningErrorState() {
@@ -111,7 +56,7 @@ function ProvisioningErrorState() {
   );
 }
 
-function DashboardErrorState() {
+function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <Container className="py-6 sm:py-8">
       <section className="ui-surface rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
@@ -131,38 +76,64 @@ function DashboardErrorState() {
             Fallback
           </span>
         </div>
+        <div className="mt-6">
+          <Button type="button" onClick={onRetry}>
+            Retry dashboard
+          </Button>
+        </div>
       </section>
     </Container>
   );
 }
 
-export default async function DashboardPage() {
-  let response: Response;
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [viewState, setViewState] = useState<DashboardViewState>("loading");
 
-  try {
-    response = await fetchDashboardData();
-  } catch {
-    return <DashboardErrorState />;
+  const loadDashboard = useCallback(async () => {
+    try {
+      const response = await getDashboardData();
+      setDashboardData(response);
+      setViewState("ready");
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        if (error.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+
+        if (error.status === 403) {
+          setViewState("provisioning");
+          return;
+        }
+      }
+
+      setViewState("error");
+    }
+  }, []);
+
+  function handleRetry() {
+    setViewState("loading");
+    void loadDashboard();
   }
 
-  if (response.status === 401) {
-    redirect("/login");
+  useEffect(() => {
+    // The protected backend cookie is unavailable to the FE server, so the dashboard bootstraps from the browser after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  if (viewState === "loading" && !dashboardData) {
+    return <DashboardLoadingState />;
   }
 
-  if (response.status === 403) {
+  if (viewState === "provisioning") {
     return <ProvisioningErrorState />;
   }
 
-  if (!response.ok) {
-    return <DashboardErrorState />;
-  }
-
-  let dashboardData: DashboardResponse;
-
-  try {
-    dashboardData = (await response.json()) as DashboardResponse;
-  } catch {
-    return <DashboardErrorState />;
+  if (viewState === "error" || !dashboardData) {
+    return <DashboardErrorState onRetry={handleRetry} />;
   }
 
   return (
@@ -177,10 +148,10 @@ export default async function DashboardPage() {
           <div className="grid gap-6 px-5 py-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)] lg:items-end sm:px-6 sm:py-6">
             <div className="min-w-0">
               <h1 className="break-words text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl">
-                Welcome back, {dashboardData.user.displayName}
+                Welcome back
               </h1>
               <p className="mt-4 max-w-2xl break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                Your live portal view keeps projects, tasks, messages, and recent files aligned in one place without leaving the protected session flow.
+                Your portal data is loaded directly from the backend API using the active backend session cookie.
               </p>
             </div>
             <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -188,19 +159,16 @@ export default async function DashboardPage() {
                 <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
                   Email
                 </dt>
-                <dd className="mt-2 truncate text-sm font-medium text-zinc-950 dark:text-zinc-100" title={dashboardData.user.email}>
-                  {dashboardData.user.email}
+                <dd className="mt-2 truncate text-sm font-medium text-zinc-950 dark:text-zinc-100" title={user?.email ?? "Not available"}>
+                  {user?.email ?? "Not available"}
                 </dd>
               </div>
               <div className="rounded-[1.35rem] border border-zinc-200/80 bg-zinc-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/80">
                 <dt className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                  Company
+                  Role
                 </dt>
-                <dd
-                  className="mt-2 truncate text-sm font-medium text-zinc-950 dark:text-zinc-100"
-                  title={dashboardData.user.companyName ?? "Not available"}
-                >
-                  {dashboardData.user.companyName ?? "Not available"}
+                <dd className="mt-2 truncate text-sm font-medium uppercase text-zinc-950 dark:text-zinc-100" title={user?.role ?? "Unknown"}>
+                  {user?.role ?? "Unknown"}
                 </dd>
               </div>
             </dl>

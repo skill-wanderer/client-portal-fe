@@ -9,13 +9,11 @@
     "lint": "eslint",
     "dev:https": "set \"NODE_EXTRA_CA_CERTS=%LOCALAPPDATA%\\mkcert\\rootCA.pem\" && node server.js",
     "test": "jest",
-    "test:auth": "jest tests/auth --runInBand --coverage",
     "prepare": "husky"
   },
   "dependencies": {
     "express": "^5.2.1",
     "next": "16.2.4",
-    "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -23,14 +21,12 @@
     "@tailwindcss/postcss": "^4",
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
-    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "husky": "^9.1.7",
     "jest": "^30.3.0",
-    "node-mocks-http": "^1.17.2",
     "tailwindcss": "^4",
     "ts-jest": "^29.4.9",
     "typescript": "^5"
