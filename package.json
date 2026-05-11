@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
     "build:cloudflare:next": "next build --webpack",
     "build:cloudflare": "npm run build:cloudflare:next && opennextjs-cloudflare build --skipNextBuild",
