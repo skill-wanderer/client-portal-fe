@@ -12,7 +12,7 @@ const {
   logWarn,
 } = require("./lib/observability/runtime.js")
 
-const dev = true
+const dev = process.env.NODE_ENV !== "production"
 
 if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") {
   throw new Error(

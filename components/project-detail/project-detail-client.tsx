@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ApiClientError } from "@/lib/api-client";
 import {
   completeProjectTask,
   sendProjectMessage,
 } from "@/lib/portal-api";
+import {
+  getPortalMutationErrorMessage,
+  redirectToLoginForApiError,
+} from "@/lib/portal-runtime";
 
 interface ProjectDetailClientProps {
   project: {
@@ -164,24 +167,19 @@ export function ProjectDetailClient({
     } catch (error) {
       setActiveTaskId(null);
 
-      if (error instanceof ApiClientError) {
-        if (error.status === 401) {
-          window.location.assign("/login");
-          return;
-        }
-
-        if (error.status === 404) {
-          setTaskError("This task is no longer available for your account.");
-          return;
-        }
-
-        if (error.status === 403) {
-          setTaskError("Your account is not provisioned for this project.");
-          return;
-        }
+      if (redirectToLoginForApiError(error)) {
+        return;
       }
 
-      setTaskError("We could not complete the task. Try again.");
+      setTaskError(
+        getPortalMutationErrorMessage(error, {
+          defaultMessage: "We could not complete the task. Try again.",
+          provisioningMessage: "Your account is not provisioned for this project.",
+          notFoundMessage: "This task is no longer available for your account.",
+          conflictMessage:
+            "This task changed on the backend before your update completed. Refresh the project and try again.",
+        })
+      );
     }
   }
 
@@ -207,29 +205,20 @@ export function ProjectDetailClient({
     } catch (error) {
       setIsMessageSubmitting(false);
 
-      if (error instanceof ApiClientError) {
-        if (error.status === 401) {
-          window.location.assign("/login");
-          return;
-        }
-
-        if (error.status === 403) {
-          setMessageError("Your account is not provisioned for this project.");
-          return;
-        }
-
-        if (error.status === 404) {
-          setMessageError("This project is no longer available for your account.");
-          return;
-        }
-
-        if (error.status === 400) {
-          setMessageError("Enter a valid message before sending.");
-          return;
-        }
+      if (redirectToLoginForApiError(error)) {
+        return;
       }
 
-      setMessageError("We could not send your message. Try again.");
+      setMessageError(
+        getPortalMutationErrorMessage(error, {
+          defaultMessage: "We could not send your message. Try again.",
+          validationMessage: "Enter a valid message before sending.",
+          provisioningMessage: "Your account is not provisioned for this project.",
+          notFoundMessage: "This project is no longer available for your account.",
+          conflictMessage:
+            "This project changed on the backend before your message was sent. Refresh the project and try again.",
+        })
+      );
     }
   }
 

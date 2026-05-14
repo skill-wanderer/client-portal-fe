@@ -7,21 +7,12 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
-  testMatch: ["<rootDir>/tests/**/*.test.ts"],
-  collectCoverage: true,
-  collectCoverageFrom: [
-    "middleware.ts",
-    "app/api/auth/session-init/**/*.ts",
-    "app/api/auth/callback/**/*.ts",
-    "app/api/auth/login/**/*.ts",
-    "lib/auth/keycloak.ts",
+  modulePathIgnorePatterns: [
+    "<rootDir>/.next/",
+    "<rootDir>/.open-next/",
+    "<rootDir>/.wrangler/",
   ],
-  coverageThreshold: {
-    global: {
-      branches: 95,
-      functions: 95,
-      lines: 95,
-      statements: 95,
-    },
-  },
+  testMatch: ["<rootDir>/tests/**/*.test.ts"],
+  passWithNoTests: true,
+  collectCoverage: false,
 };

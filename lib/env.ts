@@ -1,24 +1,18 @@
-// lib/env.ts
-
-/**
- * Centralized environment configuration.
- * All env access goes through here — single source of truth.
- */
-
 function optional(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
 }
 
+function normalizeUrl(value: string) {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
 export const env = {
-  /** Application base URL */
-  appUrl: optional("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:3000"),
+  // Local plain `next dev` still falls back to loopback, but deployed environments must set NEXT_PUBLIC_API_BASE_URL explicitly.
+  apiBaseUrl: normalizeUrl(
+    optional("NEXT_PUBLIC_API_BASE_URL", "http://127.0.0.1:8003")
+  ),
 
-  /** Backend API base URL */
-  apiBaseUrl: optional("NEXT_PUBLIC_API_BASE_URL", "http://127.0.0.1:8003"),
-
-  /** Node environment */
   nodeEnv: optional("NODE_ENV", "development"),
 
-  /** Whether we're in production */
   isProduction: process.env.NODE_ENV === "production",
 } as const;

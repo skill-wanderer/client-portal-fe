@@ -32,13 +32,19 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.dev.vars*
 
 # vercel
 .vercel
 
+# cloudflare / opennext
+.open-next/
+.wrangler/
+cloudflare-env.d.ts
+
+# local-only docs
+docs/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-docs/
-keycloak-local-proxy.Caddyfile

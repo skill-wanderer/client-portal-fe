@@ -8,8 +8,12 @@ import { TaskList } from "@/components/dashboard/task-list";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/hooks/use-auth";
-import { ApiClientError } from "@/lib/api-client";
+import { getApiClientErrorMessage } from "@/lib/api-client";
 import { type DashboardData, getDashboardData } from "@/lib/portal-api";
+import {
+  isProvisioningApiError,
+  redirectToLoginForApiError,
+} from "@/lib/portal-runtime";
 
 type DashboardViewState = "loading" | "ready" | "provisioning" | "error";
 
@@ -56,7 +60,13 @@ function ProvisioningErrorState() {
   );
 }
 
-function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
+function DashboardErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <Container className="py-6 sm:py-8">
       <section className="ui-surface rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
@@ -68,9 +78,7 @@ function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
             <h1 className="mt-3 text-2xl font-semibold tracking-tight">
               We could not load your dashboard
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-rose-900/80">
-              The dashboard service returned an unusable response for this request. Refresh the page after the service is available.
-            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-rose-900/80">{message}</p>
           </div>
           <span className="self-start rounded-full border border-rose-300 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">
             Fallback
@@ -89,31 +97,38 @@ function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
 export default function DashboardPage() {
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [viewState, setViewState] = useState<DashboardViewState>("loading");
 
   const loadDashboard = useCallback(async () => {
     try {
       const response = await getDashboardData();
       setDashboardData(response);
+      setLoadError(null);
       setViewState("ready");
     } catch (error) {
-      if (error instanceof ApiClientError) {
-        if (error.status === 401) {
-          window.location.assign("/login");
-          return;
-        }
-
-        if (error.status === 403) {
-          setViewState("provisioning");
-          return;
-        }
+      if (redirectToLoginForApiError(error)) {
+        return;
       }
 
+      if (isProvisioningApiError(error)) {
+        setLoadError(null);
+        setViewState("provisioning");
+        return;
+      }
+
+      setLoadError(
+        getApiClientErrorMessage(
+          error,
+          "The dashboard service returned an unusable response for this request. Refresh the page after the service is available."
+        )
+      );
       setViewState("error");
     }
   }, []);
 
   function handleRetry() {
+    setLoadError(null);
     setViewState("loading");
     void loadDashboard();
   }
@@ -133,7 +148,15 @@ export default function DashboardPage() {
   }
 
   if (viewState === "error" || !dashboardData) {
-    return <DashboardErrorState onRetry={handleRetry} />;
+    return (
+      <DashboardErrorState
+        message={
+          loadError ??
+          "The dashboard service returned an unusable response for this request. Refresh the page after the service is available."
+        }
+        onRetry={handleRetry}
+      />
+    );
   }
 
   return (
@@ -147,10 +170,10 @@ export default function DashboardPage() {
           </div>
           <div className="grid gap-6 px-5 py-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)] lg:items-end sm:px-6 sm:py-6">
             <div className="min-w-0">
-              <h1 className="break-words text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl">
+              <h1 className="wrap-break-word text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl">
                 Welcome back
               </h1>
-              <p className="mt-4 max-w-2xl break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              <p className="mt-4 max-w-2xl wrap-break-word text-sm leading-6 text-zinc-600 dark:text-zinc-400">
                 Your portal data is loaded directly from the backend API using the active backend session cookie.
               </p>
             </div>

@@ -1,7 +1,9 @@
 import { env } from "@/lib/env";
 
+export type ApiErrorCode = string;
+
 interface ApiErrorPayload {
-  code: string;
+  code: ApiErrorCode;
   message: string;
 }
 
@@ -21,7 +23,7 @@ type ApiEnvelope<TData> = ApiSuccessEnvelope<TData> | ApiFailureEnvelope;
 
 export class ApiClientError extends Error {
   readonly status: number;
-  readonly code: string;
+  readonly code: ApiErrorCode;
   readonly correlationId: string | null;
 
   constructor(options: {
@@ -66,6 +68,10 @@ function getErrorCode(status: number, payload: unknown) {
     return payload.error.code;
   }
 
+  if (status === 400) {
+    return "validation_error";
+  }
+
   if (status === 401) {
     return "unauthorized";
   }
@@ -75,7 +81,19 @@ function getErrorCode(status: number, payload: unknown) {
   }
 
   if (status === 404) {
-    return "not_found";
+    return "resource_not_found";
+  }
+
+  if (status === 409) {
+    return "conflict";
+  }
+
+  if (status === 412) {
+    return "precondition_failed";
+  }
+
+  if (status === 503) {
+    return "service_unavailable";
   }
 
   return "request_failed";
@@ -88,6 +106,22 @@ function getErrorMessage(status: number, payload: unknown) {
 
   if (status === 401) {
     return "Your session is no longer valid.";
+  }
+
+  if (status === 403) {
+    return "Your account is signed in but not authorized for this action.";
+  }
+
+  if (status === 404) {
+    return "The requested resource is no longer available.";
+  }
+
+  if (status === 409 || status === 412) {
+    return "The request could not be applied because the resource changed on the backend.";
+  }
+
+  if (status === 503) {
+    return "The backend service is temporarily unavailable.";
   }
 
   return "The backend request failed.";
@@ -111,6 +145,52 @@ function createNetworkError(error: unknown) {
     status: 0,
     code: "network_error",
   });
+}
+
+export function isApiClientError(error: unknown): error is ApiClientError {
+  return error instanceof ApiClientError;
+}
+
+export function isUnauthenticatedApiError(error: unknown) {
+  return (
+    isApiClientError(error) &&
+    (error.status === 401 ||
+      error.code === "unauthorized" ||
+      error.code === "no_session" ||
+      error.code === "invalid_session")
+  );
+}
+
+export function isForbiddenApiError(error: unknown) {
+  return isApiClientError(error) && error.status === 403;
+}
+
+export function isNotFoundApiError(error: unknown) {
+  return (
+    isApiClientError(error) &&
+    (error.status === 404 || error.code === "resource_not_found")
+  );
+}
+
+export function isConflictApiError(error: unknown) {
+  return (
+    isApiClientError(error) &&
+    (error.status === 409 ||
+      error.status === 412 ||
+      error.code === "conflict" ||
+      error.code === "precondition_failed" ||
+      error.code === "stale_write" ||
+      error.code === "replay_conflict" ||
+      error.code === "idempotency_conflict")
+  );
+}
+
+export function getApiClientErrorMessage(error: unknown, fallback: string) {
+  if (isApiClientError(error) && error.message) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 export function buildApiUrl(path: string) {

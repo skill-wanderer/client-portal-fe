@@ -6,11 +6,15 @@ import { useParams } from "next/navigation";
 import { ProjectDetailClient } from "@/components/project-detail/project-detail-client";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
-import { ApiClientError } from "@/lib/api-client";
+import { getApiClientErrorMessage, isNotFoundApiError } from "@/lib/api-client";
 import {
   getProjectPageData,
   type ProjectPageData,
 } from "@/lib/portal-api";
+import {
+  isProvisioningApiError,
+  redirectToLoginForApiError,
+} from "@/lib/portal-runtime";
 
 type ProjectViewState =
   | "loading"
@@ -93,7 +97,13 @@ function ProjectNotFoundState() {
   );
 }
 
-function ProjectErrorState({ onRetry }: { onRetry: () => void }) {
+function ProjectErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <Container className="py-6 sm:py-8">
       <section className="ui-surface rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
@@ -105,9 +115,7 @@ function ProjectErrorState({ onRetry }: { onRetry: () => void }) {
             <h1 className="mt-3 text-2xl font-semibold tracking-tight">
               We could not load this project
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-rose-900/80">
-              The live project APIs did not return usable data for this request. Refresh the page after the service is available.
-            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-rose-900/80">{message}</p>
             <Link
               href="/dashboard"
               className="mt-5 inline-flex items-center rounded-full border border-rose-300 bg-white/70 px-4 py-2 text-sm font-medium text-rose-700 transition-colors hover:border-rose-400 hover:text-rose-900"
@@ -134,6 +142,7 @@ export default function ProjectDetailPage() {
   const rawProjectId = params.projectId;
   const projectId = Array.isArray(rawProjectId) ? rawProjectId[0] : rawProjectId;
   const [projectData, setProjectData] = useState<ProjectPageData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ProjectViewState>("loading");
 
   const loadProject = useCallback(async () => {
@@ -145,30 +154,37 @@ export default function ProjectDetailPage() {
     try {
       const response = await getProjectPageData(projectId);
       setProjectData(response);
+      setLoadError(null);
       setViewState("ready");
     } catch (error) {
-      if (error instanceof ApiClientError) {
-        if (error.status === 401) {
-          window.location.assign("/login");
-          return;
-        }
-
-        if (error.status === 403) {
-          setViewState("provisioning");
-          return;
-        }
-
-        if (error.status === 404) {
-          setViewState("not-found");
-          return;
-        }
+      if (redirectToLoginForApiError(error)) {
+        return;
       }
 
+      if (isProvisioningApiError(error)) {
+        setLoadError(null);
+        setViewState("provisioning");
+        return;
+      }
+
+      if (isNotFoundApiError(error)) {
+        setLoadError(null);
+        setViewState("not-found");
+        return;
+      }
+
+      setLoadError(
+        getApiClientErrorMessage(
+          error,
+          "The live project APIs did not return usable data for this request. Refresh the page after the service is available."
+        )
+      );
       setViewState("error");
     }
   }, [projectId]);
 
   function handleRetry() {
+    setLoadError(null);
     setViewState("loading");
     void loadProject();
   }
@@ -192,7 +208,15 @@ export default function ProjectDetailPage() {
   }
 
   if (viewState === "error" || !projectData || !projectId) {
-    return <ProjectErrorState onRetry={handleRetry} />;
+    return (
+      <ProjectErrorState
+        message={
+          loadError ??
+          "The live project APIs did not return usable data for this request. Refresh the page after the service is available."
+        }
+        onRetry={handleRetry}
+      />
+    );
   }
 
   return (

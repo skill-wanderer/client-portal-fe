@@ -8,14 +8,25 @@ import {
   useMemo,
   useState,
 } from "react";
-import { ApiClientError, apiFetch } from "@/lib/api-client";
+import {
+  apiFetch,
+  getApiClientErrorMessage,
+  isApiClientError,
+  isUnauthenticatedApiError,
+} from "@/lib/api-client";
 import { login as startLogin } from "@/lib/auth";
+import { env } from "@/lib/env";
+import { getCanonicalLoopbackUrl } from "@/lib/local-origin";
 
 interface AuthMeResponse {
+  authenticated: boolean;
   user: {
-    id: string;
+    sub: string;
     email: string;
+    realm: string;
   };
+  role: string;
+  permissions: string[];
 }
 
 export interface AuthUser {
@@ -40,20 +51,33 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function toAuthUser(payload: AuthMeResponse) {
   return {
-    sub: payload.user.id,
+    sub: payload.user.sub,
     email: payload.user.email,
-    realm: "",
-    role: "client",
-    permissions: [],
+    realm: payload.user.realm,
+    role: payload.role,
+    permissions: payload.permissions,
   } satisfies AuthUser;
 }
 
 function getAuthErrorMessage(error: unknown) {
-  if (error instanceof ApiClientError && error.status === 401) {
+  if (isUnauthenticatedApiError(error)) {
     return null;
   }
 
-  return "We could not verify your session. Check the backend connection and try again.";
+  if (isApiClientError(error)) {
+    if (error.code === "no_mapping") {
+      return "Your sign-in succeeded, but this email is not provisioned for the client portal.";
+    }
+
+    if (error.code === "invalid_role") {
+      return "Your account is signed in, but it is not authorized for this client portal.";
+    }
+  }
+
+  return getApiClientErrorMessage(
+    error,
+    "We could not verify your session. Check the backend connection and try again."
+  );
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -62,10 +86,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const loadUser = useCallback(async () => {
+    if (typeof window !== "undefined") {
+      const normalizedUrl = getCanonicalLoopbackUrl(
+        window.location.href,
+        env.apiBaseUrl
+      );
+
+      if (normalizedUrl) {
+        window.location.replace(normalizedUrl);
+        return;
+      }
+    }
+
     try {
       const response = await apiFetch<AuthMeResponse>("/v1/auth/me", {
         cache: "no-store",
       });
+
+      if (!response.authenticated) {
+        setUser(null);
+        setError(null);
+        return;
+      }
 
       setUser(toAuthUser(response));
       setError(null);

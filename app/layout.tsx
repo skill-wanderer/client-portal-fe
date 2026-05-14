@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { LoopbackOriginGuard } from "@/components/loopback-origin-guard";
 import { AuthProvider } from "@/contexts/AuthContext";
 import "./globals.css";
 
@@ -29,6 +30,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <LoopbackOriginGuard />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
