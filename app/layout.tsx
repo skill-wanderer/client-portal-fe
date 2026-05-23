@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { LoopbackOriginGuard } from "@/components/loopback-origin-guard";
+import { RuntimeResilienceGuard } from "@/components/runtime-resilience-guard";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { assertPublicRuntimeEnv } from "@/lib/env";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,6 +15,8 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+assertPublicRuntimeEnv();
 
 export const metadata: Metadata = {
   title: "Client Portal",
@@ -31,6 +35,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <LoopbackOriginGuard />
+        <RuntimeResilienceGuard />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

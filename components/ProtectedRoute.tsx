@@ -5,10 +5,22 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  getRuntimeFailureMessage,
+  isRecoverableAuthFailure,
+} from "@/lib/runtime-failures";
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { error, isAuthenticated, isLoading, login, refreshUser } = useAuth();
+  const {
+    error,
+    isAuthenticated,
+    isLoading,
+    lastFailure,
+    login,
+    recoverSession,
+    refreshUser,
+  } = useAuth();
 
   useEffect(() => {
     if (!isLoading && !error && !isAuthenticated) {
@@ -35,6 +47,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (error) {
+    const recoveryAction =
+      lastFailure && isRecoverableAuthFailure(lastFailure)
+        ? recoverSession
+        : login;
+    const recoveryLabel =
+      lastFailure && isRecoverableAuthFailure(lastFailure)
+        ? "Resume sign-in"
+        : "Go to login";
+
     return (
       <Container className="py-12 sm:py-16">
         <section className="ui-surface rounded-3xl border border-rose-200 bg-rose-50 p-6 text-rose-950 shadow-sm sm:p-8">
@@ -44,13 +65,20 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">
             We could not verify your session
           </h1>
-          <p className="mt-3 text-sm leading-6 text-rose-900/80">{error}</p>
+          <p className="mt-3 text-sm leading-6 text-rose-900/80">
+            {getRuntimeFailureMessage(lastFailure, error)}
+          </p>
+          {lastFailure ? (
+            <p className="mt-3 text-xs uppercase tracking-[0.14em] text-rose-800/80">
+              {lastFailure.failureCode} • {lastFailure.runtimeBoundary}
+            </p>
+          ) : null}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Button type="button" onClick={() => void refreshUser()}>
-              Try again
+              {lastFailure?.retryable ? "Retry safe request" : "Try again"}
             </Button>
-            <Button type="button" variant="secondary" onClick={login}>
-              Go to login
+            <Button type="button" variant="secondary" onClick={recoveryAction}>
+              {recoveryLabel}
             </Button>
           </div>
         </section>

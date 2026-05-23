@@ -61,7 +61,8 @@ This frontend only requires one public runtime variable:
 Notes:
 
 - `NEXT_PUBLIC_APP_URL` is not used by this repository.
-- `NEXT_DEPLOYMENT_ID` is optional and can be injected by the deployment platform for version-skew protection. `next.config.ts` also picks up `CF_PAGES_COMMIT_SHA`, `SOURCE_VERSION`, and `GIT_SHA` automatically when present.
+- Deployed runtimes must expose stable deployment metadata. Set `NEXT_PUBLIC_DEPLOYMENT_ID`, or let `next.config.ts` derive it from `NEXT_DEPLOYMENT_ID`, `CF_PAGES_COMMIT_SHA`, `SOURCE_VERSION`, or `GIT_SHA` during the build.
+- Deployed runtimes should expose the frozen backend contract version through `NEXT_PUBLIC_CONTRACT_VERSION` or `CONTRACT_VERSION` so rollback checks remain diagnosable in the browser runtime.
 - Database, Redis, Keycloak, and backend secret variables belong in the backend runtime, not this frontend repository.
 - When the frontend is served over HTTPS, `NEXT_PUBLIC_API_BASE_URL` should also be HTTPS to avoid mixed-content failures.
 
@@ -149,10 +150,12 @@ Deployment commands:
 Required Cloudflare expectations:
 
 1. Configure `NEXT_PUBLIC_API_BASE_URL` in Cloudflare build variables or Worker environment variables.
-2. Keep `nodejs_compat` enabled in `wrangler.jsonc`.
-3. Treat `server.js` and `npm run dev:https` as local-only helpers; Cloudflare uses the Worker bundle under `.open-next/`, not the custom Node HTTPS server.
-4. The standard `npm run build` path stays on Next.js's default build pipeline. The Cloudflare bundle intentionally uses a webpack prebuild through `npm run build:cloudflare:next` because the current OpenNext preview path on Windows hit a Turbopack chunk-loading failure.
-5. Use `npm run preview` to validate the Worker runtime locally before `npm run deploy`. The preview command is pinned to port `3000` so local auth flows use the same loopback origin already allowed by the backend.
+2. Provide stable deployment metadata through `NEXT_PUBLIC_DEPLOYMENT_ID` or one of the commit-derived fallbacks consumed by `next.config.ts`.
+3. Keep `NEXT_PUBLIC_CONTRACT_VERSION` aligned with the backend `CONTRACT_VERSION`.
+4. Keep `nodejs_compat` enabled in `wrangler.jsonc`.
+5. Treat `server.js` and `npm run dev:https` as local-only helpers; Cloudflare uses the Worker bundle under `.open-next/`, not the custom Node HTTPS server.
+6. The standard `npm run build` path stays on Next.js's default build pipeline. The Cloudflare bundle intentionally uses a webpack prebuild through `npm run build:cloudflare:next` because the current OpenNext preview path on Windows hit a Turbopack chunk-loading failure.
+7. Use `npm run preview` to validate the Worker runtime locally before `npm run deploy`. The preview command is pinned to port `3000` so local auth flows use the same loopback origin already allowed by the backend.
 
 Windows note:
 

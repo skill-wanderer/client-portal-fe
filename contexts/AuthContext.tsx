@@ -10,13 +10,26 @@ import {
 } from "react";
 import {
   apiFetch,
+  getApiClientRuntimeFailure,
   getApiClientErrorMessage,
   isApiClientError,
   isUnauthenticatedApiError,
 } from "@/lib/api-client";
-import { login as startLogin } from "@/lib/auth";
+import { login as startLogin, recoverAuthSession } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { getCanonicalLoopbackUrl } from "@/lib/local-origin";
+import {
+  clearPendingAuthRedirectFlow,
+  clearRuntimeFailure,
+  getLastRuntimeFailure,
+  prepareAuthBootstrapContext,
+  recordRuntimeFailure,
+} from "@/lib/runtime-correlation";
+import {
+  getRuntimeFailureMessage,
+  isRecoverableAuthFailure,
+  type RuntimeFailure,
+} from "@/lib/runtime-failures";
 
 interface AuthMeResponse {
   authenticated: boolean;
@@ -42,7 +55,9 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  lastFailure: RuntimeFailure | null;
   login: () => void;
+  recoverSession: () => void;
   refreshUser: () => Promise<void>;
   clearError: () => void;
 }
@@ -59,11 +74,7 @@ function toAuthUser(payload: AuthMeResponse) {
   } satisfies AuthUser;
 }
 
-function getAuthErrorMessage(error: unknown) {
-  if (isUnauthenticatedApiError(error)) {
-    return null;
-  }
-
+function getAuthErrorMessage(error: unknown, runtimeFailure: RuntimeFailure | null) {
   if (isApiClientError(error)) {
     if (error.code === "no_mapping") {
       return "Your sign-in succeeded, but this email is not provisioned for the client portal.";
@@ -72,6 +83,13 @@ function getAuthErrorMessage(error: unknown) {
     if (error.code === "invalid_role") {
       return "Your account is signed in, but it is not authorized for this client portal.";
     }
+  }
+
+  if (runtimeFailure) {
+    return getRuntimeFailureMessage(
+      runtimeFailure,
+      "We could not verify your session. Check the backend connection and try again."
+    );
   }
 
   return getApiClientErrorMessage(
@@ -84,6 +102,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailure, setLastFailure] = useState<RuntimeFailure | null>(() =>
+    getLastRuntimeFailure()
+  );
 
   const loadUser = useCallback(async () => {
     if (typeof window !== "undefined") {
@@ -98,23 +119,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    let shouldClearPendingAuthFlow = false;
+
     try {
+      const authBootstrapContext = prepareAuthBootstrapContext();
       const response = await apiFetch<AuthMeResponse>("/v1/auth/me", {
         cache: "no-store",
+        correlationId: authBootstrapContext.correlationId,
       });
 
       if (!response.authenticated) {
         setUser(null);
         setError(null);
+        setLastFailure(null);
+        clearRuntimeFailure();
         return;
       }
 
       setUser(toAuthUser(response));
       setError(null);
+      setLastFailure(null);
+      clearRuntimeFailure();
+      shouldClearPendingAuthFlow = true;
     } catch (error) {
+      const runtimeFailure = getApiClientRuntimeFailure(error);
+
       setUser(null);
-      setError(getAuthErrorMessage(error));
+
+      if (runtimeFailure) {
+        recordRuntimeFailure(runtimeFailure);
+        setLastFailure(runtimeFailure);
+      } else {
+        setLastFailure(null);
+      }
+
+      if (isUnauthenticatedApiError(error)) {
+        setError(null);
+      } else {
+        setError(getAuthErrorMessage(error, runtimeFailure));
+      }
+
+      if (!runtimeFailure || !isRecoverableAuthFailure(runtimeFailure)) {
+        shouldClearPendingAuthFlow = true;
+      }
     } finally {
+      if (shouldClearPendingAuthFlow) {
+        clearPendingAuthRedirectFlow();
+      }
+
       setIsLoading(false);
     }
   }, []);
@@ -124,6 +176,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     await loadUser();
   }, [loadUser]);
+
+  const recoverSession = useCallback(() => {
+    setError(null);
+    recoverAuthSession();
+  }, []);
 
   useEffect(() => {
     // The backend session cookie is scoped to the API host, so auth state must be loaded from the browser after mount.
@@ -137,11 +194,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: user !== null,
       isLoading,
       error,
+      lastFailure,
       login: startLogin,
+      recoverSession,
       refreshUser,
       clearError: () => setError(null),
     }),
-    [error, isLoading, refreshUser, user]
+    [error, isLoading, lastFailure, recoverSession, refreshUser, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

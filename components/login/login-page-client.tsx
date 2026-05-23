@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  getRuntimeFailureMessage,
+  isRecoverableAuthFailure,
+} from "@/lib/runtime-failures";
 
 interface LoginPageClientProps {
   errorMessage: string | null;
@@ -16,13 +20,26 @@ export function LoginPageClient({
   hasErrorParam,
 }: LoginPageClientProps) {
   const router = useRouter();
-  const { error, isAuthenticated, isLoading, login } = useAuth();
+  const { error, isAuthenticated, isLoading, lastFailure, login, recoverSession } =
+    useAuth();
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
       router.replace("/dashboard");
     }
   }, [isAuthenticated, isLoading, router]);
+
+  const primaryAction =
+    lastFailure && isRecoverableAuthFailure(lastFailure)
+      ? recoverSession
+      : login;
+  const primaryLabel = isLoading
+    ? "Checking session..."
+    : lastFailure && isRecoverableAuthFailure(lastFailure)
+      ? "Resume sign-in"
+      : "Continue with SSO";
+  const resolvedMessage =
+    getRuntimeFailureMessage(lastFailure, error ?? errorMessage ?? "") || null;
 
   return (
     <Container className="flex flex-col items-center justify-center">
@@ -35,18 +52,23 @@ export function LoginPageClient({
             Sign in to access the client portal.
           </p>
         </div>
-        {errorMessage && (
+        {resolvedMessage && (
           <div className="rounded-md bg-red-50 p-3 text-center text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-            {errorMessage}
+            {resolvedMessage}
           </div>
         )}
-        <Button className="w-full" type="button" onClick={login}>
-          {isLoading ? "Checking session..." : "Continue with SSO"}
+        <Button className="w-full" type="button" onClick={primaryAction}>
+          {primaryLabel}
         </Button>
         {!isLoading && (hasErrorParam || error) ? (
           <div className="rounded-md bg-amber-50 p-3 text-center text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
             We could not confirm your current session. You can still continue to the backend login flow.
           </div>
+        ) : null}
+        {lastFailure ? (
+          <p className="text-center text-xs uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+            {lastFailure.failureCode} • {lastFailure.runtimeBoundary}
+          </p>
         ) : null}
       </div>
     </Container>
