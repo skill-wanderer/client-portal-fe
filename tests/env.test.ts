@@ -1,6 +1,7 @@
 import {
   assertPublicRuntimeEnv,
   resolvePublicRuntimeEnv,
+  resolveRequestRuntimeUrl,
   validatePublicRuntimeEnv,
 } from "@/lib/env";
 
@@ -74,6 +75,64 @@ describe("public runtime env validation", () => {
     expect(validation.status).toBe("degraded");
     expect(validation.issues[0]?.code).toBe("FE_LOCAL_LOOPBACK_RUNTIME");
     expect(() => assertPublicRuntimeEnv(runtimeEnv, validation)).not.toThrow();
+  });
+
+  test("derives the deployed frontend origin from OIDC redirect URIs when NEXT_PUBLIC_APP_URL is omitted", () => {
+    const runtimeEnv = resolvePublicRuntimeEnv({
+      NODE_ENV: "production",
+      NEXT_PUBLIC_API_BASE_URL: "https://api.skill-wanderer.com",
+      NEXT_PUBLIC_OIDC_ISSUER:
+        "https://sso.skill-wanderer.com/realms/client-portal",
+      NEXT_PUBLIC_OIDC_CLIENT_ID: "client-portal-fe",
+      NEXT_PUBLIC_OIDC_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/callback",
+      NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/silent-callback",
+      NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/login",
+      NEXT_PUBLIC_DEPLOYMENT_ID: "fe-deploy-20260523",
+      NEXT_PUBLIC_CONTRACT_VERSION: "contract-v1",
+    });
+
+    const validation = validatePublicRuntimeEnv(runtimeEnv);
+
+    expect(runtimeEnv.appUrl).toBe("https://client.skill-wanderer.com");
+    expect(runtimeEnv.appOrigin).toBe("https://client.skill-wanderer.com");
+    expect(validation.status).toBe("healthy");
+    expect(validation.issues).toEqual([]);
+  });
+
+  test("derives the deployed frontend origin from the request URL when available", () => {
+    const requestHeaders = new Headers({
+      host: "client.skill-wanderer.com",
+      "x-forwarded-proto": "https",
+    });
+    const runtimeEnv = resolvePublicRuntimeEnv(
+      {
+        NODE_ENV: "production",
+        NEXT_PUBLIC_API_BASE_URL: "https://api.skill-wanderer.com",
+        NEXT_PUBLIC_OIDC_ISSUER:
+          "https://sso.skill-wanderer.com/realms/client-portal",
+        NEXT_PUBLIC_OIDC_CLIENT_ID: "client-portal-fe",
+        NEXT_PUBLIC_OIDC_REDIRECT_URI:
+          "https://client.skill-wanderer.com/auth/callback",
+        NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI:
+          "https://client.skill-wanderer.com/auth/silent-callback",
+        NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI:
+          "https://client.skill-wanderer.com/login",
+        NEXT_PUBLIC_DEPLOYMENT_ID: "fe-deploy-20260523",
+        NEXT_PUBLIC_CONTRACT_VERSION: "contract-v1",
+      },
+      {
+        requestUrl: resolveRequestRuntimeUrl(requestHeaders),
+      }
+    );
+
+    const validation = validatePublicRuntimeEnv(runtimeEnv);
+
+    expect(runtimeEnv.appOrigin).toBe("https://client.skill-wanderer.com");
+    expect(validation.status).toBe("healthy");
+    expect(validation.issues).toEqual([]);
   });
 
   test("fails fast when the OIDC issuer is not a valid URL", () => {

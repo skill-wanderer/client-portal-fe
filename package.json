@@ -16,7 +16,6 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --passWithNoTests",
     "test:ci": "jest --runInBand --passWithNoTests --coverage=false --ci",
-    "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run test:ci && npm run build",
     "prepare": "husky"
   },

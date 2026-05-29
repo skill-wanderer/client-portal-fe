@@ -36,12 +36,38 @@ export interface PublicRuntimeValidation {
   issues: PublicRuntimeIssue[];
 }
 
+export interface PublicRuntimeEnvResolveOptions {
+  requestUrl?: string | URL | null;
+}
+
 const STATUS_PRIORITY: Record<PublicRuntimeStatus, number> = {
   healthy: 0,
   degraded: 1,
   incompatible: 2,
   "startup-failed": 3,
 };
+
+const LOCAL_DEV_APP_URL = "http://127.0.0.1:3000";
+const LOCAL_DEV_API_BASE_URL = "http://127.0.0.1:8003";
+const LOCAL_DEV_OIDC_ISSUER = "http://127.0.0.1:8080/realms/skill-wanderer";
+
+const DEPLOYED_HOST_ENV_KEYS = [
+  "CLOUDFLARE_PUBLIC_URL",
+  "CF_PAGES_URL",
+  "URL",
+  "DEPLOYMENT_URL",
+  "VERCEL_URL",
+] as const;
+
+const FRONTEND_REDIRECT_ENV_KEYS = [
+  "NEXT_PUBLIC_OIDC_REDIRECT_URI",
+  "NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI",
+  "NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI",
+] as const;
+
+interface RuntimeHeaderLookup {
+  get(name: string): string | null;
+}
 
 function readEnvValue(
   source: NodeJS.ProcessEnv,
@@ -57,6 +83,12 @@ function normalizeUrl(value: string) {
 
 function normalizeValue(value: string) {
   return value.trim() === "" ? "unknown" : value.trim();
+}
+
+function readOptionalEnvValue(source: NodeJS.ProcessEnv, key: string) {
+  const value = source[key];
+
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
 function parseAbsoluteUrl(value: string) {
@@ -81,6 +113,142 @@ function buildRuntimeUrl(baseUrl: string, pathname: string) {
   }
 
   return new URL(pathname, parsedBaseUrl).toString();
+}
+
+function normalizeRuntimeUrlCandidate(
+  value: string | URL | null | undefined,
+  options: {
+    extractOrigin?: boolean;
+    defaultProtocol?: "http:" | "https:";
+  } = {}
+) {
+  if (!value) {
+    return null;
+  }
+
+  const rawValue = value instanceof URL ? value.toString() : value;
+  const trimmedValue = rawValue.trim();
+
+  if (trimmedValue === "") {
+    return null;
+  }
+
+  const parsedAbsoluteUrl = parseAbsoluteUrl(trimmedValue);
+
+  if (parsedAbsoluteUrl) {
+    return normalizeUrl(
+      options.extractOrigin ? parsedAbsoluteUrl.origin : parsedAbsoluteUrl.toString()
+    );
+  }
+
+  if (/^[a-z0-9.-]+(?::\d+)?$/i.test(trimmedValue)) {
+    const defaultProtocol = options.defaultProtocol ?? "https:";
+    const protocolQualifiedUrl = parseAbsoluteUrl(
+      `${defaultProtocol}//${trimmedValue}`
+    );
+
+    if (protocolQualifiedUrl) {
+      return normalizeUrl(
+        options.extractOrigin
+          ? protocolQualifiedUrl.origin
+          : protocolQualifiedUrl.toString()
+      );
+    }
+  }
+
+  return null;
+}
+
+function readFirstRuntimeUrlCandidate(
+  values: Array<string | URL | null | undefined>,
+  options: {
+    extractOrigin?: boolean;
+    defaultProtocol?: "http:" | "https:";
+  } = {}
+) {
+  for (const value of values) {
+    const resolvedValue = normalizeRuntimeUrlCandidate(value, options);
+
+    if (resolvedValue) {
+      return resolvedValue;
+    }
+  }
+
+  return null;
+}
+
+export function resolveRequestRuntimeUrl(headers: RuntimeHeaderLookup) {
+  const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? null;
+  const host = forwardedHost ?? headers.get("host")?.split(",")[0]?.trim() ?? null;
+  const forwardedProto =
+    headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() ?? null;
+
+  if (!host) {
+    return null;
+  }
+
+  const protocol: "http:" | "https:" =
+    forwardedProto === "http"
+      ? "http:"
+      : forwardedProto === "https"
+        ? "https:"
+        : isLoopbackHost(host.replace(/:\d+$/, ""))
+          ? "http:"
+          : "https:";
+
+  return normalizeRuntimeUrlCandidate(`${protocol}//${host}`, {
+    extractOrigin: true,
+    defaultProtocol: protocol,
+  });
+}
+
+function resolveAppUrl(
+  source: NodeJS.ProcessEnv,
+  options: PublicRuntimeEnvResolveOptions
+) {
+  const explicitAppUrl = normalizeRuntimeUrlCandidate(
+    readOptionalEnvValue(source, "NEXT_PUBLIC_APP_URL"),
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (explicitAppUrl) {
+    return explicitAppUrl;
+  }
+
+  const requestDerivedAppUrl = normalizeRuntimeUrlCandidate(options.requestUrl, {
+    extractOrigin: true,
+  });
+
+  if (requestDerivedAppUrl) {
+    return requestDerivedAppUrl;
+  }
+
+  const oidcDerivedAppUrl = readFirstRuntimeUrlCandidate(
+    FRONTEND_REDIRECT_ENV_KEYS.map((key) => readOptionalEnvValue(source, key)),
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (oidcDerivedAppUrl) {
+    return oidcDerivedAppUrl;
+  }
+
+  const deployedHostAppUrl = readFirstRuntimeUrlCandidate(
+    DEPLOYED_HOST_ENV_KEYS.map((key) => readOptionalEnvValue(source, key)),
+    {
+      extractOrigin: true,
+      defaultProtocol: "https:",
+    }
+  );
+
+  if (deployedHostAppUrl) {
+    return deployedHostAppUrl;
+  }
+
+  return LOCAL_DEV_APP_URL;
 }
 
 function isLoopbackHost(hostname: string) {
@@ -116,21 +284,20 @@ function issue(
 }
 
 export function resolvePublicRuntimeEnv(
-  source: NodeJS.ProcessEnv = process.env
+  source: NodeJS.ProcessEnv = process.env,
+  options: PublicRuntimeEnvResolveOptions = {}
 ): PublicRuntimeEnv {
-  const appUrl = normalizeUrl(
-    readEnvValue(source, "NEXT_PUBLIC_APP_URL", "http://127.0.0.1:3000")
-  );
+  const appUrl = resolveAppUrl(source, options);
   const parsedAppUrl = parseAbsoluteUrl(appUrl);
   const apiBaseUrl = normalizeUrl(
-    readEnvValue(source, "NEXT_PUBLIC_API_BASE_URL", appUrl)
+    readEnvValue(source, "NEXT_PUBLIC_API_BASE_URL", LOCAL_DEV_API_BASE_URL)
   );
   const parsedApiBaseUrl = parseAbsoluteUrl(apiBaseUrl);
   const oidcIssuer = normalizeUrl(
     readEnvValue(
       source,
       "NEXT_PUBLIC_OIDC_ISSUER",
-      "http://127.0.0.1:8080/realms/skill-wanderer"
+      LOCAL_DEV_OIDC_ISSUER
     )
   );
   const oidcClientId = normalizeValue(
