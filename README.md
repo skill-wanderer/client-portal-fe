@@ -2,19 +2,21 @@
 
 Client Portal Frontend is a thin Next.js 16 client for the Skill Wanderer workflow platform.
 
-This repository owns presentation, routing, and browser-side interaction only. The backend owns authentication, session lifecycle, authorization, business invariants, workflow orchestration, and persistence.
+This repository owns presentation, routing, browser-side OIDC authentication, and browser-side interaction. Backend services still own domain authorization, workflow invariants, orchestration, and persistence.
 
 ## Runtime Model
 
-- The browser never receives Keycloak, access, refresh, or ID tokens.
-- The frontend never acts as the auth authority.
-- The frontend calls backend endpoints with `credentials: "include"` and reacts to backend outcomes.
-- The backend remains the single source of truth for user identity, permissions, workflow state, concurrency, and mutation validity.
+- The frontend authenticates directly with Keycloak by using Authorization Code Flow with PKCE.
+- The browser stores OIDC user state locally and restores it on refresh through `oidc-client-ts`.
+- The frontend sends bearer tokens to protected client APIs instead of relying on backend session cookies.
+- Backend client APIs remain the source of truth for live workflow state, concurrency, and mutation validity.
 
 The active browser-facing contract is:
 
-- `GET /v1/auth/login`
-- `GET /v1/auth/me`
+- `OIDC authorization endpoint` via the configured issuer discovery metadata
+- `OIDC token endpoint` via the configured issuer discovery metadata
+- `/auth/callback`
+- `/auth/silent-callback`
 - `GET /api/v1/client/dashboard`
 - `GET /api/v1/client/projects/{projectId}`
 - `GET /api/v1/client/projects/{projectId}/files`
@@ -27,54 +29,76 @@ All JSON API responses are expected to use the backend envelope documented in [d
 ## Architecture
 
 1. The user opens `/login` in the frontend.
-2. The frontend sends browser navigation to `${NEXT_PUBLIC_API_BASE_URL}/v1/auth/login`.
-3. The backend performs the Keycloak redirect, callback handling, and session creation.
-4. The backend redirects the browser back to the frontend after login.
-5. The frontend bootstraps authenticated user state with `GET /v1/auth/me`.
-6. Protected pages fetch live data from `/api/v1/client/*`.
-7. The frontend treats backend responses deterministically:
+2. The frontend starts a direct Keycloak OIDC redirect by using the configured issuer, client ID, and redirect URI.
+3. Keycloak redirects the browser back to `/auth/callback` with an authorization code.
+4. The frontend exchanges that code for browser-held OIDC tokens and restores authenticated user state.
+5. Protected pages fetch live data from `/api/v1/client/*` with a bearer token.
+6. The frontend treats client API responses deterministically:
    - `401` -> signed-out or expired-session flow
    - `403` -> provisioned-but-not-authorized flow
    - `404` -> resource unavailable for this user
    - `409` or `412` -> stale write or replay-safe retry flow
 
-`components/ProtectedRoute.tsx` is only a UI gate to avoid flashing protected content while `/auth/me` loads. It is not an authorization boundary. The backend still decides every authenticated request.
+`components/ProtectedRoute.tsx` is only a UI gate to avoid flashing protected content while the browser restores OIDC state. It is not an authorization boundary. The client APIs still decide every authenticated request.
 
 ## Repository Layout
 
 - `app/`: App Router pages and layouts
 - `components/`: UI components and portal views
-- `contexts/AuthContext.tsx`: browser bootstrap for backend auth state
-- `lib/api-client.ts`: centralized credentialed backend fetch layer
-- `lib/portal-runtime.ts`: shared auth redirect and backend error handling
+- `contexts/AuthContext.tsx`: browser bootstrap for OIDC auth state
+- `lib/oidc.ts`: shared OIDC client configuration and callback helpers
+- `lib/api-client.ts`: centralized bearer-token client API fetch layer
+- `lib/portal-runtime.ts`: shared auth redirect and client API error handling
 - `lib/portal-api.ts`: typed client API wrappers
 - `server.js`: local HTTPS development entrypoint only
 
 ## Environment
 
-This frontend only requires one public runtime variable:
+This frontend requires the following public runtime variables:
 
+- `NEXT_PUBLIC_APP_URL`
+  - Local plain-dev example: `http://127.0.0.1:3000`
+  - Deployed example: `https://client.skill-wanderer.com`
 - `NEXT_PUBLIC_API_BASE_URL`
   - Local plain-dev example: `http://127.0.0.1:8003`
   - Deployed example: `https://api.skill-wanderer.com`
+- `NEXT_PUBLIC_OIDC_ISSUER`
+  - Local example: `http://127.0.0.1:8080/realms/skill-wanderer`
+  - Deployed example: `https://sso.skill-wanderer.com/realms/skill-wanderer`
+- `NEXT_PUBLIC_OIDC_CLIENT_ID`
+  - Example: `client-portal-fe`
+- `NEXT_PUBLIC_OIDC_REDIRECT_URI`
+  - Example: `https://client.skill-wanderer.com/auth/callback`
+- `NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI`
+  - Example: `https://client.skill-wanderer.com/auth/silent-callback`
+- `NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI`
+  - Example: `https://client.skill-wanderer.com/login`
+- `NEXT_PUBLIC_OIDC_SCOPE`
+  - Default example: `openid profile email`
 
 Notes:
 
-- `NEXT_PUBLIC_APP_URL` is not used by this repository.
 - Deployed runtimes must expose stable deployment metadata. Set `NEXT_PUBLIC_DEPLOYMENT_ID`, or let `next.config.ts` derive it from `NEXT_DEPLOYMENT_ID`, `CF_PAGES_COMMIT_SHA`, `SOURCE_VERSION`, or `GIT_SHA` during the build.
 - Deployed runtimes should expose the frozen backend contract version through `NEXT_PUBLIC_CONTRACT_VERSION` or `CONTRACT_VERSION` so rollback checks remain diagnosable in the browser runtime.
-- Database, Redis, Keycloak, and backend secret variables belong in the backend runtime, not this frontend repository.
-- When the frontend is served over HTTPS, `NEXT_PUBLIC_API_BASE_URL` should also be HTTPS to avoid mixed-content failures.
+- Keycloak client secrets do not belong in this frontend repository. Use a public OIDC client configured for Authorization Code Flow with PKCE.
+- When the frontend is served over HTTPS, both `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_OIDC_ISSUER` should also be HTTPS to avoid mixed-content and insecure-runtime failures.
 
 Minimal `.env.local` example:
 
 ```dotenv
+NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8003
+NEXT_PUBLIC_OIDC_ISSUER=http://127.0.0.1:8080/realms/skill-wanderer
+NEXT_PUBLIC_OIDC_CLIENT_ID=client-portal-fe
+NEXT_PUBLIC_OIDC_REDIRECT_URI=http://127.0.0.1:3000/auth/callback
+NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI=http://127.0.0.1:3000/auth/silent-callback
+NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI=http://127.0.0.1:3000/login
+NEXT_PUBLIC_OIDC_SCOPE="openid profile email"
 ```
 
 ## Local Development
 
-The frontend assumes the backend is already running and reachable at `NEXT_PUBLIC_API_BASE_URL`.
+The frontend assumes both the client APIs and the configured OIDC issuer are reachable from the browser.
 
 ### Option 1: Plain HTTP development
 
@@ -84,10 +108,16 @@ The frontend assumes the backend is already running and reachable at `NEXT_PUBLI
 npm install
 ```
 
-2. Create `.env.local` with a backend API URL.
+2. Create `.env.local` with app, API, and OIDC settings.
 
 ```dotenv
+NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8003
+NEXT_PUBLIC_OIDC_ISSUER=http://127.0.0.1:8080/realms/skill-wanderer
+NEXT_PUBLIC_OIDC_CLIENT_ID=client-portal-fe
+NEXT_PUBLIC_OIDC_REDIRECT_URI=http://127.0.0.1:3000/auth/callback
+NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI=http://127.0.0.1:3000/auth/silent-callback
+NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI=http://127.0.0.1:3000/login
 ```
 
 3. Start the frontend.
@@ -98,7 +128,7 @@ npm run dev
 
 4. Open `http://127.0.0.1:3000`.
 
-If you open `http://localhost:3000` while `NEXT_PUBLIC_API_BASE_URL` points at `127.0.0.1`, the app now normalizes the browser origin to `127.0.0.1` before the auth bootstrap runs. This prevents the local CORS split between `localhost` and `127.0.0.1` from leaking into runtime behavior.
+If you open `http://localhost:3000` while `NEXT_PUBLIC_API_BASE_URL` points at `127.0.0.1`, the app still normalizes the browser origin to `127.0.0.1` before protected client calls begin. This prevents the local CORS split between `localhost` and `127.0.0.1` from leaking into runtime behavior.
 
 ### Option 2: Local HTTPS development
 
@@ -180,44 +210,45 @@ Windows note:
 
 - `/login` is the public sign-in entry page.
 - `/dashboard` and `/projects/[projectId]` are protected frontend routes.
-- Login is initiated by browser navigation to the backend's `/v1/auth/login` endpoint.
-- Auth restoration happens by calling `GET /v1/auth/me` after the app mounts in the browser.
-- Protected data is always re-read from the backend; the frontend does not invent workflow state.
-
-The currently reachable local backend does not expose a logout route, so this frontend does not render a broken sign-out action.
+- Login is initiated by a direct Keycloak redirect.
+- Auth restoration happens from the browser-held OIDC user state after the app mounts in the browser.
+- `/auth/callback` completes interactive sign-in and restores the requested route.
+- `/auth/silent-callback` supports silent token renewal.
+- Protected data is always re-read from the client APIs; the frontend does not invent workflow state.
+- Navigation now renders a real sign-out action that ends the local OIDC session and redirects through the configured logout URI.
 
 ## Deployment Requirements
 
 To deploy this frontend safely, the platform must provide:
 
 1. A backend API reachable at `NEXT_PUBLIC_API_BASE_URL`.
-2. Credentialed CORS support for the frontend origin.
-3. Backend-owned secure session cookies.
-4. Reverse proxy or CDN behavior that preserves `Set-Cookie`, redirects, and `X-Correlation-ID` headers.
-5. HTTPS wherever secure cookies are expected.
+2. A Keycloak-compatible OIDC issuer reachable at `NEXT_PUBLIC_OIDC_ISSUER`.
+3. A public OIDC client that allows the configured redirect and logout URIs.
+4. API authorization that accepts bearer access tokens from this frontend.
+5. HTTPS wherever deployed frontend, client APIs, and OIDC issuer are expected.
 
 Cloudflare-specific requirements:
 
 1. Deploy through OpenNext on Workers, not through the local `server.js` runtime.
-2. Provide `NEXT_PUBLIC_API_BASE_URL` in the Cloudflare environment used for both build and runtime.
-3. Keep the frontend origin allowed by backend credentialed CORS.
+2. Provide the full public runtime set in the Cloudflare environment used for both build and runtime.
+3. Keep the frontend origin registered in the OIDC client redirect settings.
 4. If you run rolling deployments, pass a stable deployment identifier through `NEXT_DEPLOYMENT_ID` or rely on the commit-based environment variables already read by `next.config.ts`.
 
 Recommended deployment checks:
 
-1. Set `NEXT_PUBLIC_API_BASE_URL` to the public backend URL.
+1. Set the app, API, and OIDC public runtime variables to their deployed values.
 2. Run `npm run validate`.
 3. Run `npm run build` in the deployment environment.
 4. Run `npm run build:cloudflare` or `npm run preview` before deploy.
-5. Verify login, `/v1/auth/me`, dashboard load, project load, task completion, message send, and refresh-safe auth recovery against the real backend.
+5. Verify `/login`, `/auth/callback`, dashboard load, project load, task completion, message send, logout, and refresh-safe auth recovery against the real platform.
 
 ## Troubleshooting
 
 ### Redirects back to `/login`
 
-- The backend session is missing, expired, or rejected.
-- The backend may not be allowing credentialed requests from the frontend origin.
-- The frontend may be pointed at the wrong backend base URL.
+- The local OIDC user state is missing, expired, or rejected.
+- The frontend may be pointed at the wrong OIDC issuer or client ID.
+- The client APIs may be rejecting the bearer access token.
 
 ### Local `localhost` and `127.0.0.1` behave differently
 
@@ -226,21 +257,21 @@ Recommended deployment checks:
 
 ### `403` provisioning or access errors
 
-- The backend accepted the sign-in, but the user is not provisioned or not authorized for the requested client scope.
+- The platform accepted the sign-in, but the user is not provisioned or not authorized for the requested client scope.
 
 ### Mixed-content failures in the browser
 
-- An HTTPS frontend cannot call an HTTP backend API. Either use `npm run dev` for plain HTTP local development or expose the backend over HTTPS.
+- An HTTPS frontend cannot call an HTTP API or an HTTP OIDC issuer. Either use `npm run dev` for plain HTTP local development or expose both services over HTTPS.
 
 ### Build succeeds but runtime calls fail
 
-- Re-check `NEXT_PUBLIC_API_BASE_URL`, backend CORS, and whether the deployed backend is actually serving the documented `/v1/auth/*` and `/api/v1/client/*` endpoints.
+- Re-check `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_OIDC_ISSUER`, OIDC client redirect settings, and whether the deployed APIs are actually serving the documented `/api/v1/client/*` endpoints.
 
 ### Cloudflare build works but deploy fails
 
 - Confirm Wrangler authentication is configured.
 - Confirm `wrangler.jsonc` uses a current compatibility date and `nodejs_compat`.
-- Confirm Cloudflare has the same `NEXT_PUBLIC_API_BASE_URL` value during build and runtime.
+- Confirm Cloudflare has the same app, API, and OIDC public runtime values during build and runtime.
 
 ## Non-Goals In This Repo
 

@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import { getStoredAccessToken } from "@/lib/oidc";
 import {
   beginIntentCorrelation,
   captureBackendResponseMetadata,
@@ -295,7 +296,7 @@ function getErrorMessage(status: number, payload: unknown) {
   }
 
   if (status === 401) {
-    return "Your session is no longer valid.";
+    return "Your sign-in session is no longer valid.";
   }
 
   if (status === 403) {
@@ -398,10 +399,6 @@ function createRequestFailureError(
       return FRONTEND_FAILURE_CODES.FE_API_ABORTED;
     }
 
-    if (options.path === "/v1/auth/me") {
-      return FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED;
-    }
-
     return FRONTEND_FAILURE_CODES.FE_API_TIMEOUT;
   })();
 
@@ -438,9 +435,9 @@ function createRequestFailureError(
       (failureCode !== FRONTEND_FAILURE_CODES.FE_API_ABORTED &&
         isSafeMethod(options.method)),
     runtimeBoundary:
-      failureCode === FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED
-        ? "frontend_auth"
-        : "browser_runtime",
+      failureCode === FRONTEND_FAILURE_CODES.FE_OFFLINE
+        ? "browser_runtime"
+        : "frontend_runtime",
   });
 }
 
@@ -592,10 +589,15 @@ export async function apiFetch<TData>(
   const resolvedTimeoutMs =
     timeoutMs ?? (isSafeMethod(method) ? 15_000 : 20_000);
   let response: Response | null = null;
+  const accessToken = getStoredAccessToken();
 
   headers.set("X-Correlation-ID", correlationId);
   headers.set("X-Deployment-ID", env.deploymentId);
   headers.set("X-Contract-Version", env.contractVersion);
+
+  if (accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
 
   for (let attempt = 0; attempt <= 1; attempt += 1) {
     const requestSignal = buildRequestSignal({
@@ -608,7 +610,6 @@ export async function apiFetch<TData>(
     try {
       response = await fetch(buildApiUrl(path), {
         ...requestInit,
-        credentials: "include",
         headers,
         signal: requestSignal.signal,
       });

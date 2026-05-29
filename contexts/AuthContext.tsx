@@ -6,41 +6,33 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import {
-  apiFetch,
-  getApiClientRuntimeFailure,
-  getApiClientErrorMessage,
-  isApiClientError,
-  isUnauthenticatedApiError,
-} from "@/lib/api-client";
-import { login as startLogin, recoverAuthSession } from "@/lib/auth";
+import type { User } from "oidc-client-ts";
 import { env } from "@/lib/env";
-import { getCanonicalLoopbackUrl } from "@/lib/local-origin";
 import {
-  clearPendingAuthRedirectFlow,
+  type OidcProfile,
+  getOidcUserManager,
+  isOidcCallbackPath,
+  isOidcSilentCallbackPath,
+  logoutOidcSession,
+  recoverOidcSession,
+  refreshOidcUser,
+  startOidcLogin,
+  tryRestoreOidcUser,
+} from "@/lib/oidc";
+import {
   clearRuntimeFailure,
+  ensureCorrelationId,
   getLastRuntimeFailure,
-  prepareAuthBootstrapContext,
   recordRuntimeFailure,
 } from "@/lib/runtime-correlation";
 import {
   getRuntimeFailureMessage,
-  isRecoverableAuthFailure,
+  FRONTEND_FAILURE_CODES,
   type RuntimeFailure,
 } from "@/lib/runtime-failures";
-
-interface AuthMeResponse {
-  authenticated: boolean;
-  user: {
-    sub: string;
-    email: string;
-    realm: string;
-  };
-  role: string;
-  permissions: string[];
-}
 
 export interface AuthUser {
   sub: string;
@@ -57,6 +49,7 @@ interface AuthContextValue {
   error: string | null;
   lastFailure: RuntimeFailure | null;
   login: () => void;
+  logout: () => void;
   recoverSession: () => void;
   refreshUser: () => Promise<void>;
   clearError: () => void;
@@ -64,129 +57,319 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function toAuthUser(payload: AuthMeResponse) {
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function extractRealm(issuer: string | undefined) {
+  if (!issuer) {
+    return "unknown";
+  }
+
+  const issuerSegments = issuer.split("/").filter(Boolean);
+  const realmsIndex = issuerSegments.lastIndexOf("realms");
+
+  if (realmsIndex < 0 || realmsIndex === issuerSegments.length - 1) {
+    return "unknown";
+  }
+
+  return issuerSegments[realmsIndex + 1] ?? "unknown";
+}
+
+function extractRoles(profile: OidcProfile) {
+  const realmRoles = toStringArray(profile.realm_access?.roles);
+  const resourceRoles = Object.values(profile.resource_access ?? {}).flatMap(
+    (resource) => toStringArray(resource.roles)
+  );
+
+  return Array.from(new Set([...realmRoles, ...resourceRoles]));
+}
+
+function toAuthUser(user: User) {
+  const profile = user.profile as OidcProfile;
+  const roles = extractRoles(profile);
+
   return {
-    sub: payload.user.sub,
-    email: payload.user.email,
-    realm: payload.user.realm,
-    role: payload.role,
-    permissions: payload.permissions,
+    sub: profile.sub,
+    email: profile.email ?? profile.preferred_username ?? profile.sub,
+    realm: extractRealm(profile.iss),
+    role: roles[0] ?? "authenticated",
+    permissions: Array.from(new Set([...roles, ...user.scopes])),
   } satisfies AuthUser;
 }
 
-function getAuthErrorMessage(error: unknown, runtimeFailure: RuntimeFailure | null) {
-  if (isApiClientError(error)) {
-    if (error.code === "no_mapping") {
-      return "Your sign-in succeeded, but this email is not provisioned for the client portal.";
-    }
-
-    if (error.code === "invalid_role") {
-      return "Your account is signed in, but it is not authorized for this client portal.";
-    }
-  }
-
+function resolveAuthErrorMessage(
+  error: unknown,
+  runtimeFailure: RuntimeFailure,
+  fallback: string
+) {
   if (runtimeFailure) {
     return getRuntimeFailureMessage(
       runtimeFailure,
-      "We could not verify your session. Check the backend connection and try again."
+      fallback
     );
   }
 
-  return getApiClientErrorMessage(
-    error,
-    "We could not verify your session. Check the backend connection and try again."
-  );
+  if (error instanceof Error && error.message.trim() !== "") {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+function buildAuthRuntimeFailure(options: {
+  code: string;
+  message: string;
+  failureCode: string;
+  recoveryHint: string;
+  retryable: boolean;
+  runtimeBoundary?: string;
+}) {
+  return {
+    code: options.code,
+    message: options.message,
+    failureCode: options.failureCode,
+    correlationId: ensureCorrelationId(null),
+    requestId: null,
+    deploymentId: env.deploymentId,
+    contractVersion: env.contractVersion,
+    recoveryHint: options.recoveryHint,
+    retryable: options.retryable,
+    runtimeBoundary: options.runtimeBoundary ?? "frontend_auth",
+    mutationId: null,
+    replayGroupId: null,
+    idempotentReplay: false,
+    status: 0,
+    capturedAt: Date.now(),
+  } satisfies RuntimeFailure;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const userManagerRef = useRef<ReturnType<typeof getOidcUserManager> | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    return !(
+      isOidcCallbackPath(window.location.pathname) ||
+      isOidcSilentCallbackPath(window.location.pathname)
+    );
+  });
   const [error, setError] = useState<string | null>(null);
   const [lastFailure, setLastFailure] = useState<RuntimeFailure | null>(() =>
     getLastRuntimeFailure()
   );
 
-  const loadUser = useCallback(async () => {
-    if (typeof window !== "undefined") {
-      const normalizedUrl = getCanonicalLoopbackUrl(
-        window.location.href,
-        env.apiBaseUrl
-      );
+  const resetAuthErrorState = useCallback(() => {
+    setError(null);
+    setLastFailure(null);
+    clearRuntimeFailure();
+  }, []);
 
-      if (normalizedUrl) {
-        window.location.replace(normalizedUrl);
-        return;
+  const applyResolvedUser = useCallback(
+    (resolvedUser: User | null) => {
+      setUser(resolvedUser ? toAuthUser(resolvedUser) : null);
+      resetAuthErrorState();
+      setIsLoading(false);
+    },
+    [resetAuthErrorState]
+  );
+
+  const handleAuthFailure = useCallback(
+    (
+      cause: unknown,
+      options: {
+        code: string;
+        message: string;
+        failureCode: string;
+        recoveryHint: string;
+        retryable: boolean;
+        fallback: string;
       }
-    }
-
-    let shouldClearPendingAuthFlow = false;
-
-    try {
-      const authBootstrapContext = prepareAuthBootstrapContext();
-      const response = await apiFetch<AuthMeResponse>("/v1/auth/me", {
-        cache: "no-store",
-        correlationId: authBootstrapContext.correlationId,
+    ) => {
+      const runtimeFailure = buildAuthRuntimeFailure({
+        code: options.code,
+        message: options.message,
+        failureCode: options.failureCode,
+        recoveryHint: options.recoveryHint,
+        retryable: options.retryable,
       });
 
-      if (!response.authenticated) {
-        setUser(null);
-        setError(null);
-        setLastFailure(null);
-        clearRuntimeFailure();
-        return;
-      }
-
-      setUser(toAuthUser(response));
-      setError(null);
-      setLastFailure(null);
-      clearRuntimeFailure();
-      shouldClearPendingAuthFlow = true;
-    } catch (error) {
-      const runtimeFailure = getApiClientRuntimeFailure(error);
-
-      setUser(null);
-
-      if (runtimeFailure) {
-        recordRuntimeFailure(runtimeFailure);
-        setLastFailure(runtimeFailure);
-      } else {
-        setLastFailure(null);
-      }
-
-      if (isUnauthenticatedApiError(error)) {
-        setError(null);
-      } else {
-        setError(getAuthErrorMessage(error, runtimeFailure));
-      }
-
-      if (!runtimeFailure || !isRecoverableAuthFailure(runtimeFailure)) {
-        shouldClearPendingAuthFlow = true;
-      }
-    } finally {
-      if (shouldClearPendingAuthFlow) {
-        clearPendingAuthRedirectFlow();
-      }
-
+      recordRuntimeFailure(runtimeFailure);
+      setLastFailure(runtimeFailure);
+      setError(resolveAuthErrorMessage(cause, runtimeFailure, options.fallback));
       setIsLoading(false);
+    },
+    []
+  );
+
+  const loadUser = useCallback(async () => {
+    try {
+      const restoredUser = await tryRestoreOidcUser();
+      applyResolvedUser(restoredUser);
+    } catch (cause) {
+      setUser(null);
+      handleAuthFailure(cause, {
+        code: "oidc_session_restore_failed",
+        message: "The frontend could not restore the OIDC session from browser storage.",
+        failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+        recoveryHint: "start_login",
+        retryable: true,
+        fallback:
+          "We could not restore your sign-in session from the browser. Start the sign-in flow again.",
+      });
     }
-  }, []);
+  }, [applyResolvedUser, handleAuthFailure]);
 
   const refreshUser = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
-    await loadUser();
-  }, [loadUser]);
+    resetAuthErrorState();
+
+    try {
+      const refreshedUser = await refreshOidcUser();
+      applyResolvedUser(refreshedUser);
+    } catch (cause) {
+      setUser(null);
+      handleAuthFailure(cause, {
+        code: "oidc_session_refresh_failed",
+        message: "The frontend could not refresh the OIDC session.",
+        failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+        recoveryHint: "start_login",
+        retryable: true,
+        fallback:
+          "We could not refresh your sign-in session. Start the sign-in flow again.",
+      });
+    }
+  }, [applyResolvedUser, handleAuthFailure, resetAuthErrorState]);
 
   const recoverSession = useCallback(() => {
-    setError(null);
-    recoverAuthSession();
-  }, []);
+    setIsLoading(true);
+    resetAuthErrorState();
+
+    void (async () => {
+      try {
+        const restoredUser = await recoverOidcSession();
+
+        if (restoredUser) {
+          applyResolvedUser(restoredUser);
+        }
+      } catch (cause) {
+        setUser(null);
+        handleAuthFailure(cause, {
+          code: "oidc_session_recovery_failed",
+          message: "The frontend could not recover the OIDC session.",
+          failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+          recoveryHint: "start_login",
+          retryable: true,
+          fallback:
+            "We could not resume your sign-in session. Start the sign-in flow again.",
+        });
+      }
+    })();
+  }, [applyResolvedUser, handleAuthFailure, resetAuthErrorState]);
+
+  const login = useCallback(() => {
+    setIsLoading(true);
+    resetAuthErrorState();
+
+    void (async () => {
+      try {
+        await startOidcLogin();
+      } catch (cause) {
+        handleAuthFailure(cause, {
+          code: "oidc_login_start_failed",
+          message: "The frontend could not start the OIDC login redirect.",
+          failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+          recoveryHint: "retry_login",
+          retryable: true,
+          fallback:
+            "We could not start the sign-in flow. Retry the request in this browser.",
+        });
+      }
+    })();
+  }, [handleAuthFailure, resetAuthErrorState]);
+
+  const logout = useCallback(() => {
+    setIsLoading(true);
+    resetAuthErrorState();
+    setUser(null);
+
+    void (async () => {
+      try {
+        await logoutOidcSession();
+      } catch (cause) {
+        handleAuthFailure(cause, {
+          code: "oidc_logout_failed",
+          message: "The frontend could not complete the OIDC logout redirect.",
+          failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+          recoveryHint: "retry_logout",
+          retryable: true,
+          fallback:
+            "We could not complete sign-out with the identity provider. Retry the request in this browser.",
+        });
+      }
+    })();
+  }, [handleAuthFailure, resetAuthErrorState]);
 
   useEffect(() => {
-    // The backend session cookie is scoped to the API host, so auth state must be loaded from the browser after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadUser();
-  }, [loadUser]);
+    const userManager = getOidcUserManager();
+    userManagerRef.current = userManager;
+    userManager.startSilentRenew();
+
+    const userLoadedCleanup = userManager.events.addUserLoaded((loadedUser) => {
+      applyResolvedUser(loadedUser);
+    });
+    const userUnloadedCleanup = userManager.events.addUserUnloaded(() => {
+      applyResolvedUser(null);
+    });
+    const userSignedOutCleanup = userManager.events.addUserSignedOut(() => {
+      applyResolvedUser(null);
+    });
+    const accessTokenExpiredCleanup = userManager.events.addAccessTokenExpired(() => {
+      void refreshUser();
+    });
+    const silentRenewErrorCleanup = userManager.events.addSilentRenewError(
+      (cause) => {
+        setUser(null);
+        handleAuthFailure(cause, {
+          code: "oidc_silent_renew_failed",
+          message: "The frontend could not silently renew the OIDC session.",
+          failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+          recoveryHint: "start_login",
+          retryable: true,
+          fallback:
+            "We could not renew your sign-in session silently. Start the sign-in flow again.",
+        });
+      }
+    );
+
+    if (
+      typeof window === "undefined" ||
+      (!isOidcCallbackPath(window.location.pathname) &&
+        !isOidcSilentCallbackPath(window.location.pathname))
+    ) {
+      // The OIDC session is restored entirely in the browser and must be read from the client runtime after mount.
+      queueMicrotask(() => {
+        void loadUser();
+      });
+    }
+
+    return () => {
+      userLoadedCleanup();
+      userUnloadedCleanup();
+      userSignedOutCleanup();
+      accessTokenExpiredCleanup();
+      silentRenewErrorCleanup();
+      userManager.stopSilentRenew();
+      userManagerRef.current = null;
+    };
+  }, [applyResolvedUser, handleAuthFailure, loadUser, refreshUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -195,12 +378,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       error,
       lastFailure,
-      login: startLogin,
+      login,
+      logout,
       recoverSession,
       refreshUser,
-      clearError: () => setError(null),
+      clearError: resetAuthErrorState,
     }),
-    [error, isLoading, lastFailure, recoverSession, refreshUser, user]
+    [
+      error,
+      isLoading,
+      lastFailure,
+      login,
+      logout,
+      recoverSession,
+      refreshUser,
+      resetAuthErrorState,
+      user,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -13,10 +13,16 @@ export interface PublicRuntimeIssue {
 }
 
 export interface PublicRuntimeEnv {
+  appUrl: string;
+  appOrigin: string | null;
   apiBaseUrl: string;
   apiOrigin: string | null;
-  authLoginUrl: string | null;
-  authMeUrl: string | null;
+  oidcIssuer: string;
+  oidcClientId: string;
+  oidcRedirectUri: string;
+  oidcSilentRedirectUri: string;
+  oidcLogoutRedirectUri: string;
+  oidcScope: string;
   deploymentId: string;
   contractVersion: string;
   nodeEnv: string;
@@ -71,7 +77,7 @@ function buildRuntimeUrl(baseUrl: string, pathname: string) {
   const parsedBaseUrl = parseAbsoluteUrl(baseUrl);
 
   if (!parsedBaseUrl) {
-    return null;
+    return pathname;
   }
 
   return new URL(pathname, parsedBaseUrl).toString();
@@ -112,10 +118,48 @@ function issue(
 export function resolvePublicRuntimeEnv(
   source: NodeJS.ProcessEnv = process.env
 ): PublicRuntimeEnv {
+  const appUrl = normalizeUrl(
+    readEnvValue(source, "NEXT_PUBLIC_APP_URL", "http://127.0.0.1:3000")
+  );
+  const parsedAppUrl = parseAbsoluteUrl(appUrl);
   const apiBaseUrl = normalizeUrl(
-    readEnvValue(source, "NEXT_PUBLIC_API_BASE_URL", "http://127.0.0.1:8003")
+    readEnvValue(source, "NEXT_PUBLIC_API_BASE_URL", appUrl)
   );
   const parsedApiBaseUrl = parseAbsoluteUrl(apiBaseUrl);
+  const oidcIssuer = normalizeUrl(
+    readEnvValue(
+      source,
+      "NEXT_PUBLIC_OIDC_ISSUER",
+      "http://127.0.0.1:8080/realms/skill-wanderer"
+    )
+  );
+  const oidcClientId = normalizeValue(
+    readEnvValue(source, "NEXT_PUBLIC_OIDC_CLIENT_ID", "client-portal-fe")
+  );
+  const oidcRedirectUri = normalizeUrl(
+    readEnvValue(
+      source,
+      "NEXT_PUBLIC_OIDC_REDIRECT_URI",
+      buildRuntimeUrl(appUrl, "/auth/callback")
+    )
+  );
+  const oidcSilentRedirectUri = normalizeUrl(
+    readEnvValue(
+      source,
+      "NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI",
+      buildRuntimeUrl(appUrl, "/auth/silent-callback")
+    )
+  );
+  const oidcLogoutRedirectUri = normalizeUrl(
+    readEnvValue(
+      source,
+      "NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI",
+      buildRuntimeUrl(appUrl, "/login")
+    )
+  );
+  const oidcScope = normalizeValue(
+    readEnvValue(source, "NEXT_PUBLIC_OIDC_SCOPE", "openid profile email")
+  );
   const deploymentId = normalizeValue(
     readEnvValue(
       source,
@@ -142,14 +186,20 @@ export function resolvePublicRuntimeEnv(
   const isProduction = nodeEnv === "production";
   const isDeployedRuntime =
     isProduction &&
-    parsedApiBaseUrl !== null &&
-    !isLoopbackHost(parsedApiBaseUrl.hostname);
+    parsedAppUrl !== null &&
+    !isLoopbackHost(parsedAppUrl.hostname);
 
   return {
+    appUrl,
+    appOrigin: parsedAppUrl?.origin ?? null,
     apiBaseUrl,
     apiOrigin: parsedApiBaseUrl?.origin ?? null,
-    authLoginUrl: buildRuntimeUrl(apiBaseUrl, "/v1/auth/login"),
-    authMeUrl: buildRuntimeUrl(apiBaseUrl, "/v1/auth/me"),
+    oidcIssuer,
+    oidcClientId,
+    oidcRedirectUri,
+    oidcSilentRedirectUri,
+    oidcLogoutRedirectUri,
+    oidcScope,
     deploymentId,
     contractVersion,
     nodeEnv,
@@ -163,7 +213,30 @@ export function validatePublicRuntimeEnv(
 ): PublicRuntimeValidation {
   const runtimeIssues: PublicRuntimeIssue[] = [];
   const authIssues: PublicRuntimeIssue[] = [];
+  const parsedAppUrl = parseAbsoluteUrl(runtimeEnv.appUrl);
   const parsedApiBaseUrl = parseAbsoluteUrl(runtimeEnv.apiBaseUrl);
+  const parsedOidcIssuer = parseAbsoluteUrl(runtimeEnv.oidcIssuer);
+  const parsedOidcRedirectUri = parseAbsoluteUrl(runtimeEnv.oidcRedirectUri);
+  const parsedOidcSilentRedirectUri = parseAbsoluteUrl(
+    runtimeEnv.oidcSilentRedirectUri
+  );
+  const parsedOidcLogoutRedirectUri = parseAbsoluteUrl(
+    runtimeEnv.oidcLogoutRedirectUri
+  );
+
+  if (!parsedAppUrl) {
+    runtimeIssues.push(
+      issue(
+        "FE_APP_URL_INVALID",
+        "startup-failed",
+        "frontend_runtime",
+        "The frontend app URL is not a valid absolute HTTP URL.",
+        {
+          appUrl: runtimeEnv.appUrl,
+        }
+      )
+    );
+  }
 
   if (!parsedApiBaseUrl) {
     runtimeIssues.push(
@@ -177,35 +250,89 @@ export function validatePublicRuntimeEnv(
         }
       )
     );
+  }
+
+  if (
+    runtimeEnv.oidcClientId === "unknown" ||
+    runtimeEnv.oidcScope === "unknown"
+  ) {
     authIssues.push(
       issue(
-        "FE_AUTH_URL_INVALID",
+        "FE_OIDC_CLIENT_CONFIG_INVALID",
         "startup-failed",
         "frontend_auth",
-        "The frontend cannot derive valid auth runtime URLs from the configured API origin.",
+        "The frontend OIDC client configuration is incomplete.",
         {
-          apiBaseUrl: runtimeEnv.apiBaseUrl,
+          oidcClientId: runtimeEnv.oidcClientId,
+          oidcScope: runtimeEnv.oidcScope,
+        }
+      )
+    );
+  }
+
+  if (!parsedOidcIssuer) {
+    authIssues.push(
+      issue(
+        "FE_OIDC_ISSUER_INVALID",
+        "startup-failed",
+        "frontend_auth",
+        "The configured OIDC issuer is not a valid absolute HTTP URL.",
+        {
+          oidcIssuer: runtimeEnv.oidcIssuer,
+        }
+      )
+    );
+  }
+
+  if (!parsedOidcRedirectUri || !parsedOidcSilentRedirectUri || !parsedOidcLogoutRedirectUri) {
+    authIssues.push(
+      issue(
+        "FE_OIDC_REDIRECT_URI_INVALID",
+        "startup-failed",
+        "frontend_auth",
+        "The frontend OIDC redirect URIs must be valid absolute HTTP URLs.",
+        {
+          oidcRedirectUri: runtimeEnv.oidcRedirectUri,
+          oidcSilentRedirectUri: runtimeEnv.oidcSilentRedirectUri,
+          oidcLogoutRedirectUri: runtimeEnv.oidcLogoutRedirectUri,
         }
       )
     );
   }
 
   if (
-    runtimeEnv.authLoginUrl === null ||
-    runtimeEnv.authMeUrl === null ||
-    parseAbsoluteUrl(runtimeEnv.authLoginUrl)?.origin !== runtimeEnv.apiOrigin ||
-    parseAbsoluteUrl(runtimeEnv.authMeUrl)?.origin !== runtimeEnv.apiOrigin
+    parsedAppUrl &&
+    ((parsedOidcRedirectUri && parsedOidcRedirectUri.origin !== parsedAppUrl.origin) ||
+      (parsedOidcSilentRedirectUri &&
+        parsedOidcSilentRedirectUri.origin !== parsedAppUrl.origin) ||
+      (parsedOidcLogoutRedirectUri &&
+        parsedOidcLogoutRedirectUri.origin !== parsedAppUrl.origin))
   ) {
     authIssues.push(
       issue(
-        "FE_AUTH_RUNTIME_ALIGNMENT_INVALID",
+        "FE_OIDC_REDIRECT_ORIGIN_INVALID",
         "startup-failed",
         "frontend_auth",
-        "The frontend auth URLs do not align with the configured backend API origin.",
+        "The frontend OIDC redirect URIs must remain on the frontend origin.",
         {
-          apiBaseUrl: runtimeEnv.apiBaseUrl,
-          authLoginUrl: runtimeEnv.authLoginUrl ?? "unknown",
-          authMeUrl: runtimeEnv.authMeUrl ?? "unknown",
+          appOrigin: runtimeEnv.appOrigin ?? "unknown",
+          oidcRedirectUri: runtimeEnv.oidcRedirectUri,
+          oidcSilentRedirectUri: runtimeEnv.oidcSilentRedirectUri,
+          oidcLogoutRedirectUri: runtimeEnv.oidcLogoutRedirectUri,
+        }
+      )
+    );
+  }
+
+  if (parsedAppUrl && runtimeEnv.isDeployedRuntime && parsedAppUrl.protocol !== "https:") {
+    runtimeIssues.push(
+      issue(
+        "FE_APP_ORIGIN_INSECURE",
+        "incompatible",
+        "frontend_runtime",
+        "A deployed frontend runtime must expose an HTTPS app origin.",
+        {
+          appUrl: runtimeEnv.appUrl,
         }
       )
     );
@@ -225,15 +352,36 @@ export function validatePublicRuntimeEnv(
     );
   }
 
-  if (parsedApiBaseUrl && runtimeEnv.isProduction && isLoopbackHost(parsedApiBaseUrl.hostname)) {
+  if (parsedOidcIssuer && runtimeEnv.isDeployedRuntime && parsedOidcIssuer.protocol !== "https:") {
+    authIssues.push(
+      issue(
+        "FE_OIDC_ISSUER_INSECURE",
+        "incompatible",
+        "frontend_auth",
+        "A deployed frontend runtime must target an HTTPS OIDC issuer.",
+        {
+          oidcIssuer: runtimeEnv.oidcIssuer,
+        }
+      )
+    );
+  }
+
+  if (
+    runtimeEnv.isProduction &&
+    ((parsedAppUrl && isLoopbackHost(parsedAppUrl.hostname)) ||
+      (parsedApiBaseUrl && isLoopbackHost(parsedApiBaseUrl.hostname)) ||
+      (parsedOidcIssuer && isLoopbackHost(parsedOidcIssuer.hostname)))
+  ) {
     runtimeIssues.push(
       issue(
         "FE_LOCAL_LOOPBACK_RUNTIME",
         "degraded",
         "frontend_runtime",
-        "The frontend build is running in production mode against a loopback backend origin.",
+        "The frontend build is running in production mode against loopback runtime dependencies.",
         {
+          appUrl: runtimeEnv.appUrl,
           apiBaseUrl: runtimeEnv.apiBaseUrl,
+          oidcIssuer: runtimeEnv.oidcIssuer,
         }
       )
     );
@@ -287,7 +435,7 @@ export function assertPublicRuntimeEnv(
   if (["incompatible", "startup-failed"].includes(validation.status)) {
     const issueCodes = validation.issues.map(({ code }) => code).join(", ");
     const runtimeConfigError = new Error(
-      `Invalid frontend runtime configuration (${validation.status}) for ${runtimeEnv.apiBaseUrl}: ${issueCodes}`
+      `Invalid frontend runtime configuration (${validation.status}) for ${runtimeEnv.appUrl}: ${issueCodes}`
     );
 
     runtimeConfigError.name = "RuntimeConfigError";

@@ -39,7 +39,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             Loading your portal session
           </h1>
           <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            We are verifying your backend session before rendering protected content.
+            We are restoring your Keycloak browser session before rendering protected content.
           </p>
         </section>
       </Container>
@@ -63,7 +63,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             Session unavailable
           </p>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            We could not verify your session
+            We could not restore your sign-in state
           </h1>
           <p className="mt-3 text-sm leading-6 text-rose-900/80">
             {getRuntimeFailureMessage(lastFailure, error)}

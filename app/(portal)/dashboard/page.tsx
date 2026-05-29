@@ -28,7 +28,7 @@ function DashboardLoadingState() {
           Fetching your live portal data
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          The frontend is loading the authenticated dashboard directly from the backend API.
+          The frontend is loading authenticated dashboard data with the active browser access token.
         </p>
       </section>
     </Container>
@@ -134,7 +134,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    // The protected backend cookie is unavailable to the FE server, so the dashboard bootstraps from the browser after mount.
+    // The browser access token is only available on the client, so dashboard loading starts after mount.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboard();
   }, [loadDashboard]);
@@ -174,7 +174,7 @@ export default function DashboardPage() {
                 Welcome back
               </h1>
               <p className="mt-4 max-w-2xl wrap-break-word text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                Your portal data is loaded directly from the backend API using the active backend session cookie.
+                Your portal data is loaded directly from the client APIs using the active OIDC browser session.
               </p>
             </div>
             <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">

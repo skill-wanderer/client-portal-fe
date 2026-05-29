@@ -34,10 +34,10 @@ export function LoginPageClient({
       ? recoverSession
       : login;
   const primaryLabel = isLoading
-    ? "Checking session..."
+    ? "Checking sign-in state..."
     : lastFailure && isRecoverableAuthFailure(lastFailure)
       ? "Resume sign-in"
-      : "Continue with SSO";
+      : "Continue with Keycloak";
   const resolvedMessage =
     getRuntimeFailureMessage(lastFailure, error ?? errorMessage ?? "") || null;
 
@@ -62,7 +62,7 @@ export function LoginPageClient({
         </Button>
         {!isLoading && (hasErrorParam || error) ? (
           <div className="rounded-md bg-amber-50 p-3 text-center text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            We could not confirm your current session. You can still continue to the backend login flow.
+            We could not restore a valid browser session automatically. Start a fresh Keycloak sign-in to continue.
           </div>
         ) : null}
         {lastFailure ? (

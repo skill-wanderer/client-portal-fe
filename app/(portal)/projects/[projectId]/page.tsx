@@ -34,7 +34,7 @@ function ProjectLoadingState() {
           Fetching project details
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          The frontend is loading project data directly from the backend client API.
+          The frontend is loading project data with the active browser access token.
         </p>
       </section>
     </Container>
@@ -190,7 +190,7 @@ export default function ProjectDetailPage() {
   }
 
   useEffect(() => {
-    // The project view must start its authenticated backend fetch in the browser because the FE host never receives the API cookie.
+    // The project view starts authenticated fetches in the browser because the access token stays in the client runtime.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadProject();
   }, [loadProject]);

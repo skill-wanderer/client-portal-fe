@@ -7,7 +7,7 @@ import {
   isNotFoundApiError,
   isUnauthenticatedApiError,
 } from "@/lib/api-client";
-import { redirectToLogin, recoverAuthSession } from "@/lib/auth";
+import { redirectToLogin } from "@/lib/auth";
 import {
   BACKEND_FAILURE_CODES,
   FRONTEND_FAILURE_CODES,
@@ -16,11 +16,11 @@ import {
 } from "@/lib/runtime-failures";
 
 export const LOGIN_ERROR_MESSAGES = {
-  invalid_state: "Login session expired. Please try again.",
+  invalid_state: "Login request expired. Please try again.",
   auth_failed: "Authentication failed. Please try again.",
   session_expired: "Your session has expired. Please sign in again.",
   service_unavailable: "Service temporarily unavailable. Please try again later.",
-  signed_out: "You have been signed out.",
+  signed_out: "You have been signed out of the client portal.",
   runtime_skew: "A newer portal deployment is available. Reload and try again.",
   offline: "You are offline. Reconnect and try again.",
   auth_recovery_failed: "We could not resume the sign-in flow. Start again.",
@@ -41,13 +41,10 @@ export function redirectToLoginForApiError(error: unknown) {
 
   const runtimeFailure = getApiClientRuntimeFailure(error);
 
-  if (isRecoverableAuthFailure(runtimeFailure)) {
-    recoverAuthSession();
-    return true;
-  }
-
   const loginError =
-    error instanceof ApiClientError && error.code === "no_session"
+    runtimeFailure && isRecoverableAuthFailure(runtimeFailure)
+      ? "session_expired"
+      : error instanceof ApiClientError && error.code === "no_session"
       ? undefined
       : "session_expired";
 

@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/hooks/use-auth";
 
 export function Navigation() {
-  const { user } = useAuth();
+  const { isLoading, logout, user } = useAuth();
 
   return (
     <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -23,6 +24,14 @@ export function Navigation() {
                 {user.email}
               </span>
             ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={logout}
+              disabled={isLoading}
+            >
+              Sign out
+            </Button>
           </div>
         </nav>
       </Container>
