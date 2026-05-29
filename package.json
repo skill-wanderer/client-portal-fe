@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "dev": "next dev",
     "build": "next build",
     "build:cloudflare:next": "next build --webpack",
     "build:cloudflare": "npm run build:cloudflare:next && opennextjs-cloudflare build --skipNextBuild",
@@ -14,6 +15,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "test": "jest --passWithNoTests",
     "test:ci": "jest --runInBand --passWithNoTests --coverage=false --ci",
+    "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run test:ci && npm run build",
     "prepare": "husky"
   },
