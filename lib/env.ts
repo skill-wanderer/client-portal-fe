@@ -59,21 +59,17 @@ const LOCAL_DEV_OIDC_ISSUER = "http://127.0.0.1:8080/realms/skill-wanderer";
 
 const BROWSER_RUNTIME_ENV_KEY = "__CLIENT_PORTAL_RUNTIME_ENV__" as const;
 
-const APP_URL_ENV_KEYS = [
-  "NEXT_PUBLIC_APP_URL",
-  "APP_URL",
-  "NEXTAUTH_URL",
-] as const;
+const APP_URL_PUBLIC_ENV_KEYS = ["NEXT_PUBLIC_APP_URL"] as const;
 
-const API_BASE_URL_ENV_KEYS = [
-  "NEXT_PUBLIC_API_BASE_URL",
-  "API_BASE_URL",
-] as const;
+const APP_URL_RUNTIME_ENV_KEYS = ["APP_URL", "NEXTAUTH_URL"] as const;
 
-const OIDC_ISSUER_ENV_KEYS = [
-  "NEXT_PUBLIC_OIDC_ISSUER",
-  "OIDC_ISSUER",
-] as const;
+const API_BASE_URL_PUBLIC_ENV_KEYS = ["NEXT_PUBLIC_API_BASE_URL"] as const;
+
+const API_BASE_URL_RUNTIME_ENV_KEYS = ["API_BASE_URL"] as const;
+
+const OIDC_ISSUER_PUBLIC_ENV_KEYS = ["NEXT_PUBLIC_OIDC_ISSUER"] as const;
+
+const OIDC_ISSUER_RUNTIME_ENV_KEYS = ["OIDC_ISSUER"] as const;
 
 const OIDC_CLIENT_ID_ENV_KEYS = [
   "NEXT_PUBLIC_OIDC_CLIENT_ID",
@@ -85,29 +81,35 @@ const OIDC_SCOPE_ENV_KEYS = [
   "OIDC_SCOPE",
 ] as const;
 
-const OIDC_REDIRECT_ENV_KEYS = [
-  "NEXT_PUBLIC_OIDC_REDIRECT_URI",
-  "OIDC_REDIRECT_URI",
+const OIDC_REDIRECT_PUBLIC_ENV_KEYS = ["NEXT_PUBLIC_OIDC_REDIRECT_URI"] as const;
+
+const OIDC_REDIRECT_RUNTIME_ENV_KEYS = ["OIDC_REDIRECT_URI"] as const;
+
+const OIDC_SILENT_REDIRECT_PUBLIC_ENV_KEYS = [
+  "NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI",
 ] as const;
 
-const OIDC_SILENT_REDIRECT_ENV_KEYS = [
-  "NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI",
+const OIDC_SILENT_REDIRECT_RUNTIME_ENV_KEYS = [
   "OIDC_SILENT_REDIRECT_URI",
 ] as const;
 
-const OIDC_LOGOUT_REDIRECT_ENV_KEYS = [
+const OIDC_LOGOUT_REDIRECT_PUBLIC_ENV_KEYS = [
   "NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI",
+] as const;
+
+const OIDC_LOGOUT_REDIRECT_RUNTIME_ENV_KEYS = [
   "OIDC_LOGOUT_REDIRECT_URI",
 ] as const;
 
-const DEPLOYMENT_ID_ENV_KEYS = [
+const DEPLOYMENT_ID_RUNTIME_ENV_KEYS = [
   "NEXT_DEPLOYMENT_ID",
   "CF_PAGES_COMMIT_SHA",
   "SOURCE_VERSION",
   "GIT_SHA",
   "DEPLOYMENT_ID",
-  "NEXT_PUBLIC_DEPLOYMENT_ID",
 ] as const;
+
+const DEPLOYMENT_ID_PUBLIC_ENV_KEYS = ["NEXT_PUBLIC_DEPLOYMENT_ID"] as const;
 
 const CONTRACT_VERSION_ENV_KEYS = [
   "CONTRACT_VERSION",
@@ -122,10 +124,16 @@ const DEPLOYED_HOST_ENV_KEYS = [
   "VERCEL_URL",
 ] as const;
 
-const FRONTEND_REDIRECT_ENV_KEYS = [
-  ...OIDC_REDIRECT_ENV_KEYS,
-  ...OIDC_SILENT_REDIRECT_ENV_KEYS,
-  ...OIDC_LOGOUT_REDIRECT_ENV_KEYS,
+const RUNTIME_FRONTEND_REDIRECT_ENV_KEYS = [
+  ...OIDC_REDIRECT_RUNTIME_ENV_KEYS,
+  ...OIDC_SILENT_REDIRECT_RUNTIME_ENV_KEYS,
+  ...OIDC_LOGOUT_REDIRECT_RUNTIME_ENV_KEYS,
+] as const;
+
+const PUBLIC_FRONTEND_REDIRECT_ENV_KEYS = [
+  ...OIDC_REDIRECT_PUBLIC_ENV_KEYS,
+  ...OIDC_SILENT_REDIRECT_PUBLIC_ENV_KEYS,
+  ...OIDC_LOGOUT_REDIRECT_PUBLIC_ENV_KEYS,
 ] as const;
 
 interface RuntimeHeaderLookup {
@@ -269,6 +277,147 @@ function readFirstResolvedEnvUrlCandidate(
   );
 }
 
+function isServerRuntime() {
+  return typeof window === "undefined";
+}
+
+function isDeployedRuntimeUrl(value: string | null) {
+  if (!value) {
+    return false;
+  }
+
+  const parsedUrl = parseAbsoluteUrl(value);
+
+  return parsedUrl !== null && !isLoopbackHost(parsedUrl.hostname);
+}
+
+function isProductionSafeUrlValue(value: string) {
+  const parsedUrl = parseAbsoluteUrl(value);
+
+  return (
+    parsedUrl !== null &&
+    parsedUrl.protocol === "https:" &&
+    !isLoopbackHost(parsedUrl.hostname)
+  );
+}
+
+function readPublicResolvedEnvUrlCandidate(
+  source: NodeJS.ProcessEnv,
+  keys: readonly string[],
+  isDeployedProductionServer: boolean,
+  options: {
+    extractOrigin?: boolean;
+    defaultProtocol?: "http:" | "https:";
+  } = {}
+) {
+  const publicValue = readFirstResolvedEnvUrlCandidate(source, keys, options);
+
+  if (!publicValue) {
+    return null;
+  }
+
+  if (isDeployedProductionServer && !isProductionSafeUrlValue(publicValue)) {
+    return null;
+  }
+
+  return publicValue;
+}
+
+function readPublicRuntimeUrlCandidate(
+  source: NodeJS.ProcessEnv,
+  keys: readonly string[],
+  isDeployedProductionServer: boolean,
+  options: {
+    extractOrigin?: boolean;
+    defaultProtocol?: "http:" | "https:";
+  } = {}
+) {
+  const publicValue = readFirstRuntimeUrlCandidate(
+    keys.map((key) => readOptionalEnvValue(source, key)),
+    options
+  );
+
+  if (!publicValue) {
+    return null;
+  }
+
+  if (isDeployedProductionServer && !isProductionSafeUrlValue(publicValue)) {
+    return null;
+  }
+
+  return publicValue;
+}
+
+function readPublicEnvValue(
+  source: NodeJS.ProcessEnv,
+  keys: readonly string[],
+  isDeployedProductionServer: boolean,
+  validator?: (value: string) => boolean
+) {
+  const publicValue = readFirstOptionalEnvValue(source, keys);
+
+  if (!publicValue) {
+    return null;
+  }
+
+  if (isDeployedProductionServer && validator && !validator(publicValue)) {
+    return null;
+  }
+
+  return publicValue;
+}
+
+function isDeployedProductionServerRuntime(
+  source: NodeJS.ProcessEnv,
+  nodeEnv: string,
+  options: PublicRuntimeEnvResolveOptions
+) {
+  if (nodeEnv !== "production" || !isServerRuntime()) {
+    return false;
+  }
+
+  const requestDerivedAppUrl = normalizeRuntimeUrlCandidate(options.requestUrl, {
+    extractOrigin: true,
+  });
+
+  if (isDeployedRuntimeUrl(requestDerivedAppUrl)) {
+    return true;
+  }
+
+  const explicitRuntimeAppUrl = readFirstResolvedEnvUrlCandidate(
+    source,
+    APP_URL_RUNTIME_ENV_KEYS,
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (isDeployedRuntimeUrl(explicitRuntimeAppUrl)) {
+    return true;
+  }
+
+  const runtimeRedirectDerivedAppUrl = readFirstRuntimeUrlCandidate(
+    RUNTIME_FRONTEND_REDIRECT_ENV_KEYS.map((key) => readOptionalEnvValue(source, key)),
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (isDeployedRuntimeUrl(runtimeRedirectDerivedAppUrl)) {
+    return true;
+  }
+
+  const deployedHostAppUrl = readFirstRuntimeUrlCandidate(
+    DEPLOYED_HOST_ENV_KEYS.map((key) => readOptionalEnvValue(source, key)),
+    {
+      extractOrigin: true,
+      defaultProtocol: "https:",
+    }
+  );
+
+  return isDeployedRuntimeUrl(deployedHostAppUrl);
+}
+
 export function resolveRequestRuntimeUrl(headers: RuntimeHeaderLookup) {
   const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? null;
   const host = forwardedHost ?? headers.get("host")?.split(",")[0]?.trim() ?? null;
@@ -296,16 +445,14 @@ export function resolveRequestRuntimeUrl(headers: RuntimeHeaderLookup) {
 
 function resolveAppUrl(
   source: NodeJS.ProcessEnv,
+  nodeEnv: string,
   options: PublicRuntimeEnvResolveOptions
 ) {
-  const explicitAppUrl = readFirstResolvedEnvUrlCandidate(source, APP_URL_ENV_KEYS, {
-    extractOrigin: true,
-  });
-
-  if (explicitAppUrl) {
-    return explicitAppUrl;
-  }
-
+  const isDeployedProductionServer = isDeployedProductionServerRuntime(
+    source,
+    nodeEnv,
+    options
+  );
   const requestDerivedAppUrl = normalizeRuntimeUrlCandidate(options.requestUrl, {
     extractOrigin: true,
   });
@@ -314,15 +461,27 @@ function resolveAppUrl(
     return requestDerivedAppUrl;
   }
 
-  const oidcDerivedAppUrl = readFirstRuntimeUrlCandidate(
-    FRONTEND_REDIRECT_ENV_KEYS.map((key) => readOptionalEnvValue(source, key)),
+  const explicitRuntimeAppUrl = readFirstResolvedEnvUrlCandidate(
+    source,
+    APP_URL_RUNTIME_ENV_KEYS,
     {
       extractOrigin: true,
     }
   );
 
-  if (oidcDerivedAppUrl) {
-    return oidcDerivedAppUrl;
+  if (explicitRuntimeAppUrl) {
+    return explicitRuntimeAppUrl;
+  }
+
+  const runtimeRedirectDerivedAppUrl = readFirstRuntimeUrlCandidate(
+    RUNTIME_FRONTEND_REDIRECT_ENV_KEYS.map((key) => readOptionalEnvValue(source, key)),
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (runtimeRedirectDerivedAppUrl) {
+    return runtimeRedirectDerivedAppUrl;
   }
 
   const deployedHostAppUrl = readFirstRuntimeUrlCandidate(
@@ -337,7 +496,33 @@ function resolveAppUrl(
     return deployedHostAppUrl;
   }
 
-  return LOCAL_DEV_APP_URL;
+  const explicitPublicAppUrl = readPublicResolvedEnvUrlCandidate(
+    source,
+    APP_URL_PUBLIC_ENV_KEYS,
+    isDeployedProductionServer,
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (explicitPublicAppUrl) {
+    return explicitPublicAppUrl;
+  }
+
+  const publicRedirectDerivedAppUrl = readPublicRuntimeUrlCandidate(
+    source,
+    PUBLIC_FRONTEND_REDIRECT_ENV_KEYS,
+    isDeployedProductionServer,
+    {
+      extractOrigin: true,
+    }
+  );
+
+  if (publicRedirectDerivedAppUrl) {
+    return publicRedirectDerivedAppUrl;
+  }
+
+  return isDeployedProductionServer ? "unknown" : LOCAL_DEV_APP_URL;
 }
 
 function resolveApiBaseUrl(
@@ -345,26 +530,42 @@ function resolveApiBaseUrl(
   appUrl: string,
   nodeEnv: string
 ) {
-  const explicitApiBaseUrl = readFirstResolvedEnvUrlCandidate(
+  const parsedAppUrl = parseAbsoluteUrl(appUrl);
+  const isDeployedRuntime =
+    nodeEnv === "production" &&
+    parsedAppUrl !== null &&
+    !isLoopbackHost(parsedAppUrl.hostname);
+  const explicitRuntimeApiBaseUrl = readFirstResolvedEnvUrlCandidate(
     source,
-    API_BASE_URL_ENV_KEYS,
+    API_BASE_URL_RUNTIME_ENV_KEYS,
     {
       extractOrigin: true,
     }
   );
 
-  if (explicitApiBaseUrl) {
-    return explicitApiBaseUrl;
+  if (explicitRuntimeApiBaseUrl) {
+    return explicitRuntimeApiBaseUrl;
   }
 
-  const parsedAppUrl = parseAbsoluteUrl(appUrl);
+  const explicitPublicApiBaseUrl = readPublicResolvedEnvUrlCandidate(
+    source,
+    API_BASE_URL_PUBLIC_ENV_KEYS,
+    isDeployedRuntime,
+    {
+      extractOrigin: true,
+    }
+  );
 
-  if (
-    nodeEnv === "production" &&
-    parsedAppUrl !== null &&
-    !isLoopbackHost(parsedAppUrl.hostname)
-  ) {
+  if (explicitPublicApiBaseUrl) {
+    return explicitPublicApiBaseUrl;
+  }
+
+  if (isDeployedRuntime) {
     return parsedAppUrl.origin;
+  }
+
+  if (nodeEnv === "production" && isServerRuntime() && parsedAppUrl === null) {
+    return "unknown";
   }
 
   return LOCAL_DEV_API_BASE_URL;
@@ -372,16 +573,62 @@ function resolveApiBaseUrl(
 
 function resolveConfiguredUrl(
   source: NodeJS.ProcessEnv,
-  keys: readonly string[],
-  fallback: string
+  runtimeKeys: readonly string[],
+  publicKeys: readonly string[],
+  fallback: string,
+  isDeployedRuntime: boolean
 ) {
-  return normalizeUrl(readFirstOptionalEnvValue(source, keys) ?? fallback);
+  const runtimeValue = readFirstOptionalEnvValue(source, runtimeKeys);
+
+  if (runtimeValue) {
+    return normalizeUrl(runtimeValue);
+  }
+
+  const publicValue = readPublicEnvValue(
+    source,
+    publicKeys,
+    isDeployedRuntime,
+    isProductionSafeUrlValue
+  );
+
+  return normalizeUrl(publicValue ?? fallback);
 }
 
-function resolveDeploymentId(source: NodeJS.ProcessEnv) {
-  return normalizeValue(
-    readFirstOptionalEnvValue(source, DEPLOYMENT_ID_ENV_KEYS) ?? "local-dev"
+function resolveDeploymentId(
+  source: NodeJS.ProcessEnv,
+  nodeEnv: string,
+  appUrl: string
+) {
+  const runtimeDeploymentId = readFirstOptionalEnvValue(
+    source,
+    DEPLOYMENT_ID_RUNTIME_ENV_KEYS
   );
+
+  if (runtimeDeploymentId) {
+    return normalizeValue(runtimeDeploymentId);
+  }
+
+  const parsedAppUrl = parseAbsoluteUrl(appUrl);
+  const isDeployedRuntime =
+    nodeEnv === "production" &&
+    parsedAppUrl !== null &&
+    !isLoopbackHost(parsedAppUrl.hostname);
+  const publicDeploymentId = readPublicEnvValue(
+    source,
+    DEPLOYMENT_ID_PUBLIC_ENV_KEYS,
+    isDeployedRuntime,
+    (value) => !isPlaceholderDeploymentId(normalizeValue(value))
+  );
+
+  if (publicDeploymentId) {
+    return normalizeValue(publicDeploymentId);
+  }
+
+  if (isDeployedRuntime) {
+    return normalizeValue(parsedAppUrl.host);
+  }
+
+  return "local-dev";
 }
 
 function resolveContractVersion(source: NodeJS.ProcessEnv) {
@@ -427,13 +674,23 @@ export function resolvePublicRuntimeEnv(
   options: PublicRuntimeEnvResolveOptions = {}
 ): PublicRuntimeEnv {
   const nodeEnv = readEnvValue(source, "NODE_ENV", "development");
-  const appUrl = resolveAppUrl(source, options);
+  const appUrl = resolveAppUrl(source, nodeEnv, options);
   const parsedAppUrl = parseAbsoluteUrl(appUrl);
+  const isDeployedRuntime =
+    nodeEnv === "production" &&
+    parsedAppUrl !== null &&
+    !isLoopbackHost(parsedAppUrl.hostname);
   const apiBaseUrl = resolveApiBaseUrl(source, appUrl, nodeEnv);
   const parsedApiBaseUrl = parseAbsoluteUrl(apiBaseUrl);
   const oidcIssuer = normalizeUrl(
-    readFirstOptionalEnvValue(source, OIDC_ISSUER_ENV_KEYS) ??
-      LOCAL_DEV_OIDC_ISSUER
+    readFirstOptionalEnvValue(source, OIDC_ISSUER_RUNTIME_ENV_KEYS) ??
+      readPublicEnvValue(
+        source,
+        OIDC_ISSUER_PUBLIC_ENV_KEYS,
+        isDeployedRuntime,
+        isProductionSafeUrlValue
+      ) ??
+      (isDeployedRuntime ? "unknown" : LOCAL_DEV_OIDC_ISSUER)
   );
   const oidcClientId = normalizeValue(
     readFirstOptionalEnvValue(source, OIDC_CLIENT_ID_ENV_KEYS) ??
@@ -441,30 +698,32 @@ export function resolvePublicRuntimeEnv(
   );
   const oidcRedirectUri = resolveConfiguredUrl(
     source,
-    OIDC_REDIRECT_ENV_KEYS,
-    buildRuntimeUrl(appUrl, "/auth/callback")
+    OIDC_REDIRECT_RUNTIME_ENV_KEYS,
+    OIDC_REDIRECT_PUBLIC_ENV_KEYS,
+    buildRuntimeUrl(appUrl, "/auth/callback"),
+    isDeployedRuntime
   );
   const oidcSilentRedirectUri = resolveConfiguredUrl(
     source,
-    OIDC_SILENT_REDIRECT_ENV_KEYS,
-    buildRuntimeUrl(appUrl, "/auth/silent-callback")
+    OIDC_SILENT_REDIRECT_RUNTIME_ENV_KEYS,
+    OIDC_SILENT_REDIRECT_PUBLIC_ENV_KEYS,
+    buildRuntimeUrl(appUrl, "/auth/silent-callback"),
+    isDeployedRuntime
   );
   const oidcLogoutRedirectUri = resolveConfiguredUrl(
     source,
-    OIDC_LOGOUT_REDIRECT_ENV_KEYS,
-    buildRuntimeUrl(appUrl, "/login")
+    OIDC_LOGOUT_REDIRECT_RUNTIME_ENV_KEYS,
+    OIDC_LOGOUT_REDIRECT_PUBLIC_ENV_KEYS,
+    buildRuntimeUrl(appUrl, "/login"),
+    isDeployedRuntime
   );
   const oidcScope = normalizeValue(
     readFirstOptionalEnvValue(source, OIDC_SCOPE_ENV_KEYS) ??
       "openid profile email"
   );
-  const deploymentId = resolveDeploymentId(source);
+  const deploymentId = resolveDeploymentId(source, nodeEnv, appUrl);
   const contractVersion = resolveContractVersion(source);
   const isProduction = nodeEnv === "production";
-  const isDeployedRuntime =
-    isProduction &&
-    parsedAppUrl !== null &&
-    !isLoopbackHost(parsedAppUrl.hostname);
 
   return {
     appUrl,
