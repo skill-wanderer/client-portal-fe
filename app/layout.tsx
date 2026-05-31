@@ -8,6 +8,7 @@ import {
   assertPublicRuntimeEnv,
   resolvePublicRuntimeEnv,
   resolveRequestRuntimeUrl,
+  serializePublicRuntimeEnv,
   validatePublicRuntimeEnv,
 } from "@/lib/env";
 import "./globals.css";
@@ -45,6 +46,12 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <script
+          id="__client-portal-runtime-env"
+          dangerouslySetInnerHTML={{
+            __html: `window.__CLIENT_PORTAL_RUNTIME_ENV__=${serializePublicRuntimeEnv(runtimeEnv)};`,
+          }}
+        />
         <LoopbackOriginGuard />
         <RuntimeResilienceGuard />
         <AuthProvider>{children}</AuthProvider>

@@ -135,6 +135,88 @@ describe("public runtime env validation", () => {
     expect(validation.issues).toEqual([]);
   });
 
+  test("prefers runtime deployment metadata over a baked public placeholder", () => {
+    const runtimeEnv = resolvePublicRuntimeEnv({
+      NODE_ENV: "production",
+      NEXT_PUBLIC_APP_URL: "https://client.skill-wanderer.com",
+      NEXT_PUBLIC_API_BASE_URL: "https://api.skill-wanderer.com",
+      NEXT_PUBLIC_OIDC_ISSUER:
+        "https://sso.skill-wanderer.com/realms/client-portal",
+      NEXT_PUBLIC_OIDC_CLIENT_ID: "client-portal-fe",
+      NEXT_PUBLIC_OIDC_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/callback",
+      NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/silent-callback",
+      NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/login",
+      NEXT_PUBLIC_DEPLOYMENT_ID: "local-dev",
+      NEXT_DEPLOYMENT_ID: "cf-deploy-20260531",
+      CONTRACT_VERSION: "contract-v1",
+    });
+
+    const validation = validatePublicRuntimeEnv(runtimeEnv);
+
+    expect(runtimeEnv.deploymentId).toBe("cf-deploy-20260531");
+    expect(runtimeEnv.contractVersion).toBe("contract-v1");
+    expect(validation.status).toBe("healthy");
+    expect(validation.issues).toEqual([]);
+  });
+
+  test("accepts server-side runtime aliases for API and OIDC config", () => {
+    const runtimeEnv = resolvePublicRuntimeEnv({
+      NODE_ENV: "production",
+      NEXT_PUBLIC_APP_URL: "https://client.skill-wanderer.com",
+      API_BASE_URL: "https://api.skill-wanderer.com",
+      OIDC_ISSUER: "https://sso.skill-wanderer.com/realms/client-portal",
+      OIDC_CLIENT_ID: "client-portal-fe",
+      OIDC_REDIRECT_URI: "https://client.skill-wanderer.com/auth/callback",
+      OIDC_SILENT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/silent-callback",
+      OIDC_LOGOUT_REDIRECT_URI: "https://client.skill-wanderer.com/login",
+      NEXT_DEPLOYMENT_ID: "cf-deploy-20260531",
+      CONTRACT_VERSION: "contract-v1",
+    });
+
+    const validation = validatePublicRuntimeEnv(runtimeEnv);
+
+    expect(runtimeEnv.apiBaseUrl).toBe("https://api.skill-wanderer.com");
+    expect(runtimeEnv.oidcIssuer).toBe(
+      "https://sso.skill-wanderer.com/realms/client-portal"
+    );
+    expect(runtimeEnv.oidcClientId).toBe("client-portal-fe");
+    expect(validation.status).toBe("healthy");
+    expect(validation.issues).toEqual([]);
+  });
+
+  test("defaults the deployed API base URL to the frontend origin when backend config is omitted", () => {
+    const runtimeEnv = resolvePublicRuntimeEnv(
+      {
+        NODE_ENV: "production",
+        NEXT_PUBLIC_OIDC_ISSUER:
+          "https://sso.skill-wanderer.com/realms/client-portal",
+        NEXT_PUBLIC_OIDC_CLIENT_ID: "client-portal-fe",
+        NEXT_PUBLIC_OIDC_REDIRECT_URI:
+          "https://client.skill-wanderer.com/auth/callback",
+        NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI:
+          "https://client.skill-wanderer.com/auth/silent-callback",
+        NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI:
+          "https://client.skill-wanderer.com/login",
+        NEXT_DEPLOYMENT_ID: "cf-deploy-20260531",
+        CONTRACT_VERSION: "contract-v1",
+      },
+      {
+        requestUrl: "https://client.skill-wanderer.com/login",
+      }
+    );
+
+    const validation = validatePublicRuntimeEnv(runtimeEnv);
+
+    expect(runtimeEnv.apiBaseUrl).toBe("https://client.skill-wanderer.com");
+    expect(runtimeEnv.apiOrigin).toBe("https://client.skill-wanderer.com");
+    expect(validation.status).toBe("healthy");
+    expect(validation.issues).toEqual([]);
+  });
+
   test("fails fast when the OIDC issuer is not a valid URL", () => {
     const runtimeEnv = resolvePublicRuntimeEnv({
       NODE_ENV: "production",
