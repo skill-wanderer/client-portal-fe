@@ -296,4 +296,55 @@ describe("public runtime env validation", () => {
       /FE_OIDC_ISSUER_INVALID/
     );
   });
+
+  test("logs raw issuer source values when a markdown-formatted issuer reaches validation", () => {
+    const source: NodeJS.ProcessEnv = {
+      NODE_ENV: "production",
+      OIDC_ISSUER:
+        "[https://sso.skill-wanderer.com/realms/client-portal](https://sso.skill-wanderer.com/realms/client-portal)",
+      NEXT_PUBLIC_OIDC_ISSUER:
+        "[https://sso.skill-wanderer.com/realms/client-portal](https://sso.skill-wanderer.com/realms/client-portal)",
+      NEXT_PUBLIC_APP_URL: "https://client.skill-wanderer.com",
+      NEXT_PUBLIC_API_BASE_URL: "https://api.skill-wanderer.com",
+      NEXT_PUBLIC_OIDC_CLIENT_ID: "client-portal-fe",
+      NEXT_PUBLIC_OIDC_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/callback",
+      NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/auth/silent-callback",
+      NEXT_PUBLIC_OIDC_LOGOUT_REDIRECT_URI:
+        "https://client.skill-wanderer.com/login",
+      NEXT_DEPLOYMENT_ID: "cf-deploy-20260602",
+      CONTRACT_VERSION: "contract-v1",
+    };
+    const runtimeEnv = resolvePublicRuntimeEnv(source, {
+      requestUrl: "https://client.skill-wanderer.com/login",
+    });
+    const validation = validatePublicRuntimeEnv(runtimeEnv);
+    const consoleErrorSpy = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    expect(() =>
+      assertPublicRuntimeEnv(runtimeEnv, validation, {
+        source,
+        requestUrl: "https://client.skill-wanderer.com/login",
+      })
+    ).toThrow(/FE_OIDC_ISSUER_INVALID/);
+
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+
+    const diagnosticRecord = JSON.parse(
+      String(consoleErrorSpy.mock.calls[0]?.[0] ?? "{}")
+    );
+
+    expect(diagnosticRecord.issuer.resolvedValue).toBe(source.OIDC_ISSUER);
+    expect(diagnosticRecord.issuer.resolvedSource).toBe("runtime:OIDC_ISSUER");
+    expect(diagnosticRecord.issuer.rawRuntimeValueLooksLikeMarkdownLink).toBe(
+      true
+    );
+    expect(diagnosticRecord.runtime.bindings.OIDC_ISSUER).toBe(true);
+    expect(diagnosticRecord.runtime.bindings.NEXT_PUBLIC_OIDC_ISSUER).toBe(true);
+
+    consoleErrorSpy.mockRestore();
+  });
 });

@@ -34,11 +34,15 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const requestHeaders = await headers();
+  const requestUrl = resolveRequestRuntimeUrl(requestHeaders);
   const runtimeEnv = resolvePublicRuntimeEnv(process.env, {
-    requestUrl: resolveRequestRuntimeUrl(requestHeaders),
+    requestUrl,
   });
 
-  assertPublicRuntimeEnv(runtimeEnv, validatePublicRuntimeEnv(runtimeEnv));
+  assertPublicRuntimeEnv(runtimeEnv, validatePublicRuntimeEnv(runtimeEnv), {
+    source: process.env,
+    requestUrl,
+  });
 
   return (
     <html

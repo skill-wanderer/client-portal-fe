@@ -40,6 +40,11 @@ export interface PublicRuntimeEnvResolveOptions {
   requestUrl?: string | URL | null;
 }
 
+export interface PublicRuntimeAssertOptions {
+  source?: NodeJS.ProcessEnv;
+  requestUrl?: string | URL | null;
+}
+
 declare global {
   interface Window {
     __CLIENT_PORTAL_RUNTIME_ENV__?: PublicRuntimeEnv;
@@ -177,6 +182,21 @@ function readFirstOptionalEnvValue(
   return null;
 }
 
+function readFirstOptionalEnvEntry(
+  source: NodeJS.ProcessEnv,
+  keys: readonly string[]
+) {
+  for (const key of keys) {
+    const value = readOptionalEnvValue(source, key);
+
+    if (value) {
+      return { key, value };
+    }
+  }
+
+  return null;
+}
+
 function parseAbsoluteUrl(value: string) {
   try {
     const parsedUrl = new URL(value);
@@ -189,6 +209,10 @@ function parseAbsoluteUrl(value: string) {
   } catch {
     return null;
   }
+}
+
+function looksLikeMarkdownLink(value: string | null) {
+  return value !== null && /^\[[^\]]+\]\([^\s)]+\)$/.test(value);
 }
 
 function buildRuntimeUrl(baseUrl: string, pathname: string) {
@@ -968,9 +992,12 @@ export function assertPublicRuntimeEnv(
   runtimeEnv: PublicRuntimeEnv = getCurrentPublicRuntimeEnv(),
   validation: PublicRuntimeValidation = getCurrentPublicRuntimeValidation(
     runtimeEnv
-  )
+  ),
+  options: PublicRuntimeAssertOptions = {}
 ) {
   if (["incompatible", "startup-failed"].includes(validation.status)) {
+    emitPublicRuntimeDiagnostics(runtimeEnv, validation, options);
+
     const issueCodes = validation.issues.map(({ code }) => code).join(", ");
     const runtimeConfigError = new Error(
       `Invalid frontend runtime configuration (${validation.status}) for ${runtimeEnv.appUrl}: ${issueCodes}`
@@ -982,6 +1009,109 @@ export function assertPublicRuntimeEnv(
   }
 
   return validation;
+}
+
+function getResolvedOidcIssuerSource(
+  runtimeEnv: PublicRuntimeEnv,
+  source: NodeJS.ProcessEnv | undefined
+) {
+  if (!source) {
+    return "unavailable";
+  }
+
+  const runtimeEntry = readFirstOptionalEnvEntry(source, OIDC_ISSUER_RUNTIME_ENV_KEYS);
+
+  if (runtimeEntry) {
+    return `runtime:${runtimeEntry.key}`;
+  }
+
+  const publicEntry = readFirstOptionalEnvEntry(source, OIDC_ISSUER_PUBLIC_ENV_KEYS);
+
+  if (publicEntry) {
+    if (!runtimeEnv.isDeployedRuntime || isProductionSafeUrlValue(publicEntry.value)) {
+      return `public:${publicEntry.key}`;
+    }
+
+    return `public-rejected:${publicEntry.key}`;
+  }
+
+  return runtimeEnv.isDeployedRuntime ? "fallback:unknown" : "fallback:local-dev";
+}
+
+function emitPublicRuntimeDiagnostics(
+  runtimeEnv: PublicRuntimeEnv,
+  validation: PublicRuntimeValidation,
+  options: PublicRuntimeAssertOptions
+) {
+  if (typeof window !== "undefined") {
+    return;
+  }
+
+  const source = options.source;
+  const runtimeIssuerEntry = source
+    ? readFirstOptionalEnvEntry(source, OIDC_ISSUER_RUNTIME_ENV_KEYS)
+    : null;
+  const publicIssuerEntry = source
+    ? readFirstOptionalEnvEntry(source, OIDC_ISSUER_PUBLIC_ENV_KEYS)
+    : null;
+  const requestOrigin = normalizeRuntimeUrlCandidate(options.requestUrl, {
+    extractOrigin: true,
+  });
+  const record = {
+    level: "error",
+    message: "frontend_runtime_diagnostic",
+    timestamp: new Date().toISOString(),
+    issues: validation.issues.map(({ code, status, boundary, details }) => ({
+      code,
+      status,
+      boundary,
+      details,
+    })),
+    runtime: {
+      nodeEnv: runtimeEnv.nodeEnv,
+      isProduction: runtimeEnv.isProduction,
+      isDeployedRuntime: runtimeEnv.isDeployedRuntime,
+      isServerRuntime: isServerRuntime(),
+      requestOrigin,
+      appUrl: runtimeEnv.appUrl,
+      deploymentId: runtimeEnv.deploymentId,
+      contractVersion: runtimeEnv.contractVersion,
+      bindings: source
+        ? {
+            OIDC_ISSUER: runtimeIssuerEntry !== null,
+            NEXT_PUBLIC_OIDC_ISSUER: publicIssuerEntry !== null,
+            NEXT_DEPLOYMENT_ID:
+              readFirstOptionalEnvEntry(source, DEPLOYMENT_ID_RUNTIME_ENV_KEYS) !==
+              null,
+            CLOUDFLARE_PUBLIC_URL:
+              readFirstOptionalEnvEntry(source, DEPLOYED_HOST_ENV_KEYS) !== null,
+          }
+        : null,
+    },
+    issuer: {
+      resolvedValue: runtimeEnv.oidcIssuer,
+      resolvedSource: getResolvedOidcIssuerSource(runtimeEnv, source),
+      resolvedValueParses: parseAbsoluteUrl(runtimeEnv.oidcIssuer) !== null,
+      rawRuntimeValue: runtimeIssuerEntry?.value ?? null,
+      rawRuntimeKey: runtimeIssuerEntry?.key ?? null,
+      rawRuntimeValueParses:
+        runtimeIssuerEntry !== null &&
+        parseAbsoluteUrl(runtimeIssuerEntry.value) !== null,
+      rawRuntimeValueLooksLikeMarkdownLink: looksLikeMarkdownLink(
+        runtimeIssuerEntry?.value ?? null
+      ),
+      rawPublicValue: publicIssuerEntry?.value ?? null,
+      rawPublicKey: publicIssuerEntry?.key ?? null,
+      rawPublicValueParses:
+        publicIssuerEntry !== null &&
+        parseAbsoluteUrl(publicIssuerEntry.value) !== null,
+      rawPublicValueLooksLikeMarkdownLink: looksLikeMarkdownLink(
+        publicIssuerEntry?.value ?? null
+      ),
+    },
+  };
+
+  console.error(JSON.stringify(record));
 }
 
 function readInjectedPublicRuntimeEnv() {
