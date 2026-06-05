@@ -8,14 +8,21 @@ import { TaskList } from "@/components/dashboard/task-list";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/hooks/use-auth";
-import { getApiClientErrorMessage } from "@/lib/api-client";
+import {
+  ApiClientError,
+  buildApiUrl,
+  getApiClientErrorMessage,
+} from "@/lib/api-client";
 import { type DashboardData, getDashboardData } from "@/lib/portal-api";
+import { getLastBackendResponseMetadata } from "@/lib/runtime-correlation";
 import {
   isProvisioningApiError,
   redirectToLoginForApiError,
 } from "@/lib/portal-runtime";
 
 type DashboardViewState = "loading" | "ready" | "provisioning" | "error";
+
+const DASHBOARD_API_PATH = "/api/v1/client/dashboard";
 
 function DashboardLoadingState() {
   return (
@@ -94,6 +101,43 @@ function DashboardErrorState({
   );
 }
 
+function logDashboardLoadFailure(error: unknown) {
+  const diagnosticRecord = {
+    level: "error",
+    message: "dashboard_data_load_failed",
+    endpointPath: DASHBOARD_API_PATH,
+    endpointUrl: buildApiUrl(DASHBOARD_API_PATH),
+    lastBackendResponse: getLastBackendResponseMetadata(),
+    error:
+      error instanceof ApiClientError
+        ? {
+            name: error.name,
+            message: error.message,
+            status: error.status,
+            code: error.code,
+            failureCode: error.failureCode,
+            runtimeBoundary: error.runtimeBoundary,
+            correlationId: error.correlationId,
+            requestId: error.requestId,
+            deploymentId: error.deploymentId,
+            contractVersion: error.contractVersion,
+            recoveryHint: error.recoveryHint,
+            retryable: error.retryable,
+          }
+        : error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+            }
+          : {
+              name: "Error",
+              message: String(error),
+            },
+  };
+
+  console.error(JSON.stringify(diagnosticRecord));
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
@@ -116,6 +160,8 @@ export default function DashboardPage() {
         setViewState("provisioning");
         return;
       }
+
+      logDashboardLoadFailure(error);
 
       setLoadError(
         getApiClientErrorMessage(

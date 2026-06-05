@@ -42,34 +42,63 @@ export function LoginPageClient({
     getRuntimeFailureMessage(lastFailure, error ?? errorMessage ?? "") || null;
 
   return (
-    <Container className="flex flex-col items-center justify-center">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Sign in
-          </h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Sign in to access the client portal.
-          </p>
+    <Container className="min-h-screen flex items-center justify-center">
+      <div className="w-full max-w-md">
+        <div className="rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 p-8 space-y-6">
+          {/* ── Heading ── */}
+          <div className="space-y-2 text-center">
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Sign in
+            </h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Sign in to access the client portal.
+            </p>
+          </div>
+
+          {/* ── Error alert ── */}
+          {resolvedMessage && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+              {resolvedMessage}
+            </div>
+          )}
+
+          {/* ── Session warning ── */}
+          {!isLoading && (hasErrorParam || error) ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+              We could not restore a valid browser session automatically. Start
+              a fresh Keycloak sign-in to continue.
+            </div>
+          ) : null}
+
+          {/* ── CTA button ── */}
+          <Button
+            className="w-full py-3 text-base"
+            type="button"
+            onClick={primaryAction}
+          >
+            {primaryLabel}
+          </Button>
+
+          {/* ── Runtime status panel ── */}
+          {lastFailure ? (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-2 text-xs font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                Runtime Status
+              </p>
+              <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                {lastFailure.failureCode}
+              </p>
+              <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                {lastFailure.runtimeBoundary}
+              </p>
+            </div>
+          ) : null}
         </div>
-        {resolvedMessage && (
-          <div className="rounded-md bg-red-50 p-3 text-center text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-            {resolvedMessage}
-          </div>
-        )}
-        <Button className="w-full" type="button" onClick={primaryAction}>
-          {primaryLabel}
-        </Button>
-        {!isLoading && (hasErrorParam || error) ? (
-          <div className="rounded-md bg-amber-50 p-3 text-center text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            We could not restore a valid browser session automatically. Start a fresh Keycloak sign-in to continue.
-          </div>
-        ) : null}
-        {lastFailure ? (
-          <p className="text-center text-xs uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
-            {lastFailure.failureCode} • {lastFailure.runtimeBoundary}
-          </p>
-        ) : null}
+
+        {/* ── Footer ── */}
+        <p className="mt-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+          Protected by Keycloak authentication.
+        </p>
       </div>
     </Container>
   );
