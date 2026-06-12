@@ -37,8 +37,13 @@ function buildOidcUserManager() {
     post_logout_redirect_uri: buildSignedOutRedirectUri(),
     response_type: "code",
     scope: env.oidcScope,
-    automaticSilentRenew: true,
-    monitorSession: true,
+
+    // Disabled intentionally.
+    // The login page must not auto-renew stale refresh tokens before the user clicks sign in.
+    // Production logs showed token endpoint 400 loops from signinSilent/exchangeRefreshToken.
+    automaticSilentRenew: false,
+    monitorSession: false,
+
     loadUserInfo: true,
     filterProtocolClaims: true,
     userStore: new WebStorageStateStore({ store: window.localStorage }),
@@ -164,6 +169,46 @@ export function getStoredAccessToken() {
   return user.access_token;
 }
 
+export async function cleanupOidcBrowserState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  let userManager: UserManager | null = null;
+
+  try {
+    userManager = getOidcUserManager();
+  } catch {
+    userManager = null;
+  }
+
+  if (userManager) {
+    try {
+      await userManager.stopSilentRenew();
+    } catch {
+      // Ignore cleanup errors.
+    }
+
+    try {
+      await userManager.removeUser();
+    } catch {
+      // Ignore cleanup errors.
+    }
+
+    try {
+      await userManager.clearStaleState();
+    } catch {
+      // Ignore cleanup errors.
+    }
+  }
+
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    // Ignore cleanup errors.
+  }
+}
+
 export async function loadOidcUser() {
   const userManager = getOidcUserManager();
 
@@ -172,36 +217,51 @@ export async function loadOidcUser() {
 
 export async function tryRestoreOidcUser() {
   const userManager = getOidcUserManager();
-  const currentUser = await userManager.getUser();
-
-  if (!currentUser) {
-    return null;
-  }
-
-  if (!currentUser.expired) {
-    return currentUser;
-  }
 
   try {
-    return await userManager.signinSilent();
+    const currentUser = await userManager.getUser();
+
+    if (!currentUser) {
+      await cleanupOidcBrowserState();
+      return null;
+    }
+
+    if (!currentUser.expired) {
+      return currentUser;
+    }
+
+    // Expired/stale refresh tokens must be treated as unauthenticated.
+    // Do not call signinSilent automatically on the login page.
+    await cleanupOidcBrowserState();
+    return null;
   } catch {
+    await cleanupOidcBrowserState();
     return null;
   }
 }
 
 export async function refreshOidcUser() {
   const userManager = getOidcUserManager();
-  const currentUser = await userManager.getUser();
 
-  if (!currentUser) {
+  try {
+    const currentUser = await userManager.getUser();
+
+    if (!currentUser) {
+      await cleanupOidcBrowserState();
+      return null;
+    }
+
+    if (!currentUser.expired) {
+      return currentUser;
+    }
+
+    // Avoid silent refresh loops when Keycloak rejects stale refresh tokens.
+    await cleanupOidcBrowserState();
+    return null;
+  } catch {
+    await cleanupOidcBrowserState();
     return null;
   }
-
-  if (!currentUser.expired) {
-    return currentUser;
-  }
-
-  return userManager.signinSilent();
 }
 
 export async function startOidcLogin(returnTo = getCurrentRelativeUrl()) {

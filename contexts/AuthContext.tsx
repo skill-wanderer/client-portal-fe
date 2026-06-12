@@ -13,6 +13,7 @@ import type { User } from "oidc-client-ts";
 import { env } from "@/lib/env";
 import {
   type OidcProfile,
+  cleanupOidcBrowserState,
   getOidcUserManager,
   isOidcCallbackPath,
   isOidcSilentCallbackPath,
@@ -25,7 +26,6 @@ import {
 import {
   clearRuntimeFailure,
   ensureCorrelationId,
-  getLastRuntimeFailure,
   recordRuntimeFailure,
 } from "@/lib/runtime-correlation";
 import {
@@ -162,9 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   });
   const [error, setError] = useState<string | null>(null);
-  const [lastFailure, setLastFailure] = useState<RuntimeFailure | null>(() =>
-    getLastRuntimeFailure()
-  );
+  const [lastFailure, setLastFailure] = useState<RuntimeFailure | null>(null);
 
   const resetAuthErrorState = useCallback(() => {
     setError(null);
@@ -320,41 +318,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const userManager = getOidcUserManager();
     userManagerRef.current = userManager;
-    userManager.startSilentRenew();
+
+    // Do not call startSilentRenew() here.
+    // It caused signinSilent/exchangeRefreshToken loops when stale refresh tokens existed.
 
     const userLoadedCleanup = userManager.events.addUserLoaded((loadedUser) => {
       applyResolvedUser(loadedUser);
     });
+
     const userUnloadedCleanup = userManager.events.addUserUnloaded(() => {
       applyResolvedUser(null);
     });
+
     const userSignedOutCleanup = userManager.events.addUserSignedOut(() => {
       applyResolvedUser(null);
     });
+
     const accessTokenExpiredCleanup = userManager.events.addAccessTokenExpired(() => {
-      void refreshUser();
+      void (async () => {
+        await cleanupOidcBrowserState();
+        applyResolvedUser(null);
+      })();
     });
-    const silentRenewErrorCleanup = userManager.events.addSilentRenewError(
-      (cause) => {
-        setUser(null);
-        handleAuthFailure(cause, {
-          code: "oidc_silent_renew_failed",
-          message: "The frontend could not silently renew the OIDC session.",
-          failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
-          recoveryHint: "start_login",
-          retryable: true,
-          fallback:
-            "We could not renew your sign-in session silently. Start the sign-in flow again.",
-        });
-      }
-    );
+
+    const silentRenewErrorCleanup = userManager.events.addSilentRenewError(() => {
+      void (async () => {
+        await cleanupOidcBrowserState();
+        applyResolvedUser(null);
+      })();
+    });
 
     if (
-      typeof window === "undefined" ||
-      (!isOidcCallbackPath(window.location.pathname) &&
-        !isOidcSilentCallbackPath(window.location.pathname))
+      typeof window !== "undefined" &&
+      !isOidcCallbackPath(window.location.pathname) &&
+      !isOidcSilentCallbackPath(window.location.pathname)
     ) {
-      // The OIDC session is restored entirely in the browser and must be read from the client runtime after mount.
+      // Restore once after client mount.
+      // If the stored browser session is stale, lib/oidc.ts cleans it and returns null.
       queueMicrotask(() => {
         void loadUser();
       });
@@ -366,10 +366,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userSignedOutCleanup();
       accessTokenExpiredCleanup();
       silentRenewErrorCleanup();
-      userManager.stopSilentRenew();
+
+      void cleanupOidcBrowserState();
       userManagerRef.current = null;
     };
-  }, [applyResolvedUser, handleAuthFailure, loadUser, refreshUser]);
+  }, [applyResolvedUser, loadUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
