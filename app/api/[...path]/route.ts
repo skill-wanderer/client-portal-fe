@@ -1,4 +1,5 @@
 const DEFAULT_API_UPSTREAM_URL = "https://client-portal-api.skill-wanderer.com";
+const FORWARDED_CONTRACT_VERSION = "2026-05-21";
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -17,8 +18,6 @@ const FORWARDED_REQUEST_HEADERS = [
   "content-type",
   "accept",
   "x-session-id",
-  "x-deployment-id",
-  "x-contract-version",
   "x-correlation-id",
   "x-request-id",
   "x-idempotency-key",
@@ -90,6 +89,12 @@ function buildUpstreamRequestHeaders(request: Request) {
     if (headerValue !== null) {
       headers.set(headerName, headerValue);
     }
+  }
+
+  const contractVersion = request.headers.get("x-contract-version");
+
+  if (contractVersion === FORWARDED_CONTRACT_VERSION) {
+    headers.set("X-Contract-Version", contractVersion);
   }
 
   const originalHost = getOriginalHost(request);
