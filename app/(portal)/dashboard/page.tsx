@@ -139,12 +139,16 @@ function logDashboardLoadFailure(error: unknown) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewState, setViewState] = useState<DashboardViewState>("loading");
 
   const loadDashboard = useCallback(async () => {
+    if (isLoading || !isAuthenticated) {
+      return;
+    }
+
     try {
       const response = await getDashboardData();
       setDashboardData(response);
@@ -171,19 +175,23 @@ export default function DashboardPage() {
       );
       setViewState("error");
     }
-  }, []);
+  }, [isAuthenticated, isLoading]);
 
   function handleRetry() {
     setLoadError(null);
     setViewState("loading");
-    void loadDashboard();
+    if (!isLoading && isAuthenticated) {
+      void loadDashboard();
+    }
   }
 
   useEffect(() => {
     // The browser access token is only available on the client, so dashboard loading starts after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadDashboard();
-  }, [loadDashboard]);
+    if (!isLoading && isAuthenticated) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void loadDashboard();
+    }
+  }, [isAuthenticated, isLoading, loadDashboard]);
 
   if (viewState === "loading" && !dashboardData) {
     return <DashboardLoadingState />;

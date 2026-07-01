@@ -169,6 +169,24 @@ export function getStoredAccessToken() {
   return user.access_token;
 }
 
+export async function getActiveAccessToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const currentUser = await getOidcUserManager().getUser();
+
+    if (currentUser && !currentUser.expired) {
+      return currentUser.access_token;
+    }
+  } catch {
+    // Fall back to the direct storage read below.
+  }
+
+  return getStoredAccessToken();
+}
+
 export async function cleanupOidcBrowserState() {
   if (typeof window === "undefined") {
     return;

@@ -1,5 +1,5 @@
 import { env } from "@/lib/env";
-import { getStoredAccessToken } from "@/lib/oidc";
+import { getActiveAccessToken } from "@/lib/oidc";
 import {
   beginIntentCorrelation,
   captureBackendResponseMetadata,
@@ -441,6 +441,23 @@ function createRequestFailureError(
   });
 }
 
+function createMissingAccessTokenError(correlationId: string) {
+  return handleRuntimeFailure(
+    new ApiClientError({
+      message: "Your sign-in session is no longer valid.",
+      status: 401,
+      code: "no_session",
+      correlationId,
+      deploymentId: env.deploymentId,
+      contractVersion: env.contractVersion,
+      failureCode: FRONTEND_FAILURE_CODES.FE_AUTH_BOOTSTRAP_FAILED,
+      recoveryHint: "start_login",
+      retryable: false,
+      runtimeBoundary: "frontend_auth",
+    })
+  );
+}
+
 function createUnexpectedResponseError(response: Response, correlationId: string) {
   const contentType = response.headers.get("content-type") ?? "";
   const failureCode = contentType.includes("text/html")
@@ -589,13 +606,17 @@ export async function apiFetch<TData>(
   const resolvedTimeoutMs =
     timeoutMs ?? (isSafeMethod(method) ? 15_000 : 20_000);
   let response: Response | null = null;
-  const accessToken = getStoredAccessToken();
+  const accessToken = await getActiveAccessToken();
 
   headers.set("X-Correlation-ID", correlationId);
   headers.set("X-Deployment-ID", env.deploymentId);
   headers.set("X-Contract-Version", env.contractVersion);
 
-  if (accessToken && !headers.has("Authorization")) {
+  if (!headers.has("Authorization")) {
+    if (!accessToken) {
+      throw createMissingAccessTokenError(correlationId);
+    }
+
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
